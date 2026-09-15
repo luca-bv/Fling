@@ -189,6 +189,13 @@ enum SmokeTest {
             let newWindow = Window.all(of: app.processIdentifier).first { !existing.contains($0.element) }
             expect("layout applies to a newly opened window",
                    newWindow?.frame?.isClose(to: CGRect(x: s.minX, y: s.midY, width: s.width / 2, height: s.height / 2)) == true)
+            if let newWindow, let frame = window.frame {
+                newWindow.setFrame(frame)
+                try? await Task.sleep(for: .milliseconds(500))
+                let visible = Window.visible().map(\.element)
+                expect("visible windows include both of two exactly stacked windows",
+                       visible.contains(window.element) && visible.contains(newWindow.element))
+            }
             _ = newWindow?.performControl(.close)
             state.layouts.removeAll { $0.id == opened.id }
         }

@@ -48,10 +48,10 @@ struct Window {
                   let dict = entry[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
             if candidates[pid] == nil { candidates[pid] = all(of: pid) }
-            // Window server and Accessibility describe the same windows; pair them up by frame.
-            if let match = candidates[pid]?.first(where: { $0.frame?.isClose(to: bounds) == true }),
-               !result.contains(where: { $0.element == match.element }) {
-                result.append(match)
+            // Window server and Accessibility describe the same windows; pair them up by frame. A paired window leaves
+            // the pool, so two windows with the same frame (stacked exactly) pair with different entries.
+            if let index = candidates[pid]?.firstIndex(where: { $0.frame?.isClose(to: bounds) == true }) {
+                result.append(candidates[pid]!.remove(at: index))
             }
         }
         return result
