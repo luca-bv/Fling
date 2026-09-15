@@ -63,12 +63,25 @@ enum SmokeTest {
             state.perform(.winArrowLeft, on: window)
         }
         await check("restore after win arrows", original) { state.perform(.restore, on: window) }
+        state.keyboardGrid?.show(for: window)
+        _ = state.keyboardGrid?.handleKey(13) // W: top row, second column
+        await check("keyboard grid W then C spans the middle columns", CGRect(x: s.minX + s.width / 4, y: s.minY,
+                                                                              width: s.width / 2, height: s.height)) {
+            _ = state.keyboardGrid?.handleKey(8) // C: bottom row, third column
+        }
+        expect("keyboard grid closes and hotkeys resume", state.keyboardGrid?.isShowing == false && !state.capturingKeys)
+        let logged = state.diagnostics.last
+        expect("diagnostics logged the grid placement", logged?.command == "Keyboard Grid" && logged?.problem == nil)
+        await check("restore after keyboard grid", original) { state.perform(.restore, on: window) }
 
         await check("stash left", CGRect(x: screen.frame.minX - original.width + 8, y: original.minY,
                                          width: original.width, height: original.height)) {
             state.stash.stash(window, to: .left)
         }
         let shownLeft = CGRect(x: s.minX, y: original.minY, width: original.width, height: original.height)
+        let tucked = CGRect(x: screen.frame.minX - original.width + 8, y: original.minY, width: original.width, height: original.height)
+        window.setOrigin(shownLeft.origin) // as if macOS pulled it back on screen after sleep
+        await check("stash is re-tucked after macOS moves it", tucked) { state.stash.reapply() }
         await check("toggle stashed shows it", shownLeft) { state.perform(.toggleStashed) }
         await check("toggle stashed tucks it back", CGRect(x: screen.frame.minX - original.width + 8, y: original.minY,
                                                           width: original.width, height: original.height)) {

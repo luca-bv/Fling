@@ -4,6 +4,7 @@ A lightweight macOS window manager that lives in the menu bar.
 
 - **Keyboard shortcuts** for halves, corners, thirds, fourths, sixths, fill, maximize, center, nudge, size, move, displays, Spaces and window controls. Repeating a half cycles ½ → ⅔ → ⅓; nudge and size repeat while held. **Win Arrow Keys** step between halves and corners like Windows.
 - **Drag to snap**: screen edges and corners (each configurable), a **Snap Panel** of tiles, and custom **snap targets**, with footprint previews and haptics. Drag a snapped window away to restore its size; drag a shared edge to resize neighbors.
+- **Keyboard grid**: press ⌃⌥⌘G, then two letters (Q W E R / A S D F / Z X C V) to span the window across those grid cells.
 - **Window Throw**: hold ⌃⌘, a mouse button, or rest 3–5 fingers on the trackpad and lift all but one; move toward one of 16 configurable positions and release.
 - **Quick Throw**, and **move/resize by holding modifiers**.
 - **Custom positions** (fractions or points, repeat cycles, per-display) and **Layouts** that arrange all your apps: by shortcut, URL, display connect/disconnect, wake, or as windows open.
@@ -12,6 +13,7 @@ A lightweight macOS window manager that lives in the menu bar.
 - **Pin Mode** keeps one app in a strip; everything else fills the rest.
 - Gaps, double-click title bar to maximize, Dock-aware resizing, windows return when a display reconnects, context menu at the cursor, hideable menu bar icon, launch at login.
 - **Configuration** export/import as JSON and iCloud Drive sync.
+- **Diagnostics**: Settings → Diagnostics lists recent actions and explains why a window didn't move (fixed-size window, unresponsive app, missing permission), with a copyable report.
 - **URL scheme**: `open -g "fling://execute-action?name=left-half"`, `fling://execute-custom?name=…`, `fling://execute-layout?name=…`
 
 Requires macOS 14+.
@@ -44,9 +46,24 @@ If you also run Rectangle, quit it first. It uses the same default shortcuts.
 | Center | ⌃⌥ C |
 | Larger / Smaller | ⌃⌥ = − |
 | Next / Previous Display | ⌃⌥⌘ → ← |
+| Keyboard Grid | ⌃⌥⌘ G |
 | Restore | ⌃⌥ ⌫ |
 
 Every action is also available in the menu bar menu. Change or clear shortcuts in **Settings → Shortcuts** (⌘, from the menu).
+
+## Automation
+
+Every action, custom position and layout can be run by URL, so anything that opens URLs can drive Fling:
+
+```sh
+open -g "fling://execute-action?name=left-half"        # action names: the menu titles, kebab-cased
+open -g "fling://execute-custom?name=Wide%20Center"     # a custom position, by name
+open -g "fling://execute-layout?name=Deep%20Work"       # a layout, by name
+```
+
+**Layouts per Focus mode (Shortcuts app):** Automation → New Automation → Focus → pick a Focus → "When Turning On" → add the **Open URLs** action with `fling://execute-layout?name=Deep%20Work`, and turn off "Ask Before Running". Add another for "When Turning Off" with your everyday layout.
+
+**Other triggers the same way:** Shortcuts' App automation (when Zoom opens → meeting layout), Time of Day, or Wi-Fi network (home vs office desk); a terminal alias or Raycast/Alfred script command running `open -g "fling://…"`; Stream Deck or BetterTouchTool buttons that open a URL.
 
 ## Layout
 
@@ -60,6 +77,7 @@ Every action is also available in the menu bar menu. Change or clear shortcuts i
 | `Sources/Fling/Models.swift` | Custom position, layout and URL models (tested) |
 | `Sources/Fling/Stash.swift` | Edge stashing |
 | `Sources/Fling/SnapPanel.swift` | Snap Panel tiles shown while dragging |
+| `Sources/Fling/KeyboardGrid.swift` | Lettered grid overlay for two-key placement |
 | `Sources/Fling/Trackpad.swift` | Trackpad finger-count trigger (private MultitouchSupport) |
 | `Sources/Fling/WindowWatcher.swift` | New-window notifications for layouts |
 | `Sources/Fling/ContextMenu.swift` | Pop-up action menu at the cursor |
@@ -68,4 +86,5 @@ Every action is also available in the menu bar menu. Change or clear shortcuts i
 | `Sources/Fling/Gestures.swift` | Event tap: drag snapping, Window Throw, Quick Throw, move/resize, footprint overlay |
 | `Sources/Fling/SettingsView.swift` | Settings: General, Shortcuts (recorder), Mouse |
 | `Sources/Fling/LayoutSettings.swift` | Settings: Custom positions and Layouts |
-| `docs/rectangle-pro-research.md` | Feature research and roadmap notes |
+| `docs/rectangle-pro-research.md` | Rectangle Pro feature research |
+| `docs/differentiation-research.md` | Competitive research and roadmap |

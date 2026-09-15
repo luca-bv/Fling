@@ -124,3 +124,14 @@ private let window = CGRect(x: 100, y: 100, width: 400, height: 300)
     #expect(adjusted(left, from: old, to: new) == CGRect(x: 0, y: 25, width: 600, height: 875))
     #expect(adjusted(CGRect(x: 300, y: 200, width: 400, height: 300), from: old, to: new) == nil)
 }
+
+@Test func keyboardGrid() {
+    #expect(KeyGrid.cell(forKey: 12) == KeyGrid.Cell(column: 0, row: 0)) // Q
+    #expect(KeyGrid.cell(forKey: 9) == KeyGrid.Cell(column: 3, row: 2))  // V
+    #expect(KeyGrid.cell(forKey: 53) == nil)                            // Esc
+    let q = KeyGrid.Cell(column: 0, row: 0), s = KeyGrid.Cell(column: 1, row: 1), v = KeyGrid.Cell(column: 3, row: 2)
+    // Order doesn't matter, and one cell twice fills just that cell.
+    #expect(KeyGrid.frame(from: s, to: q, in: screen).isClose(to: CGRect(x: 0, y: 25, width: 600, height: 533.33), tolerance: 0.01))
+    #expect(KeyGrid.frame(from: v, to: v, in: screen).isClose(to: CGRect(x: 900, y: 558.33, width: 300, height: 266.67), tolerance: 0.01))
+    #expect(KeyGrid.frame(from: q, to: v, in: screen, gap: 20) == screen.insetBy(dx: 20, dy: 20))
+}

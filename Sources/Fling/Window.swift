@@ -86,7 +86,9 @@ struct Window {
         return CGRect(origin: origin, size: size)
     }
 
-    func setFrame(_ f: CGRect) {
+    /// Returns the first Accessibility error, or `.success`.
+    @discardableResult
+    func setFrame(_ f: CGRect) -> AXError {
         // Enhanced UI (turned on by assistive apps) makes apps animate AX resizes slowly; pause it.
         let enhanced = "AXEnhancedUserInterface" as CFString
         var ref: CFTypeRef?
@@ -94,15 +96,14 @@ struct Window {
         if wasEnhanced { AXUIElementSetAttributeValue(app, enhanced, kCFBooleanFalse) }
 
         // Size, move, size again: the first resize may be clamped by the old screen's bounds.
-        setSize(f.size)
-        setOrigin(f.origin)
-        setSize(f.size)
+        let results = [setSize(f.size), setOrigin(f.origin), setSize(f.size)]
 
         if wasEnhanced { AXUIElementSetAttributeValue(app, enhanced, kCFBooleanTrue) }
+        return results.first { $0 != .success } ?? .success
     }
 
-    func setOrigin(_ origin: CGPoint) { set(kAXPositionAttribute, .cgPoint, origin) }
-    func setSize(_ size: CGSize) { set(kAXSizeAttribute, .cgSize, size) }
+    @discardableResult func setOrigin(_ origin: CGPoint) -> AXError { set(kAXPositionAttribute, .cgPoint, origin) }
+    @discardableResult func setSize(_ size: CGSize) -> AXError { set(kAXSizeAttribute, .cgSize, size) }
 
     /// Handles actions that aren't frame changes. Returns false for frame-based actions.
     func performControl(_ action: Action) -> Bool {
@@ -175,10 +176,10 @@ struct Window {
         return AXValueGetValue(ref as! AXValue, type, &out) ? out : nil
     }
 
-    private func set<T: BitwiseCopyable>(_ attribute: String, _ type: AXValueType, _ value: T) {
+    private func set<T: BitwiseCopyable>(_ attribute: String, _ type: AXValueType, _ value: T) -> AXError {
         var value = value
-        guard let axValue = AXValueCreate(type, &value) else { return }
-        AXUIElementSetAttributeValue(element, attribute as CFString, axValue)
+        guard let axValue = AXValueCreate(type, &value) else { return .illegalArgument }
+        return AXUIElementSetAttributeValue(element, attribute as CFString, axValue)
     }
 }
 

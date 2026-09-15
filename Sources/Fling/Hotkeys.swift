@@ -62,6 +62,7 @@ extension Action {
         case .nextDisplay:     return Shortcut(kVK_RightArrow, "\u{F703}", co.union(.command))
         case .previousDisplay: return Shortcut(kVK_LeftArrow, "\u{F702}", co.union(.command))
         case .restore:         return Shortcut(kVK_Delete, "\u{7F}", co)
+        case .keyboardGrid:    return Shortcut(kVK_ANSI_G, "g", co.union(.command))
         default:               return nil
         }
     }

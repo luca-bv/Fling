@@ -13,7 +13,7 @@ enum Action: String, CaseIterable, Codable {
     case fillLeft, fillRight
     case larger, smaller, moveLeft, moveRight, moveUp, moveDown, nudgeLeft, nudgeRight, nudgeUp, nudgeDown
     case nextDisplay, previousDisplay, nextSpace, previousSpace
-    case restore, minimize, fullScreen, close, hideApp, quitApp, showMenu
+    case restore, minimize, fullScreen, close, hideApp, quitApp, showMenu, keyboardGrid
     case stashLeft, stashRight, stashAll, stashAllExceptFront, toggleStashed, cycleStashed, unstashAll
     case togglePin, reflowPin
     case tile2x2, tile2x3, cascadeAll, cascadeApp, appLeftHalf, appRightHalf
@@ -60,7 +60,7 @@ enum Action: String, CaseIterable, Codable {
         case .fillLeft, .fillRight: .fill
         case .larger, .smaller, .moveLeft, .moveRight, .moveUp, .moveDown, .nudgeLeft, .nudgeRight, .nudgeUp, .nudgeDown: .sizeAndMove
         case .nextDisplay, .previousDisplay, .nextSpace, .previousSpace: .display
-        case .restore, .minimize, .fullScreen, .close, .hideApp, .quitApp, .showMenu: .window
+        case .restore, .minimize, .fullScreen, .close, .hideApp, .quitApp, .showMenu, .keyboardGrid: .window
         case .stashLeft, .stashRight, .stashAll, .stashAllExceptFront, .toggleStashed, .cycleStashed, .unstashAll: .stash
         case .togglePin, .reflowPin: .pin
         case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf: .multiple
@@ -144,12 +144,42 @@ enum Action: String, CaseIterable, Codable {
             let shrunk = w.insetBy(dx: Self.sizeStep, dy: Self.sizeStep)
             return shrunk.width < s.width / 4 || shrunk.height < s.height / 4 ? w : shrunk
         case .nextDisplay, .previousDisplay, .nextSpace, .previousSpace, .restore, .minimize, .fullScreen, .close,
-             .hideApp, .quitApp, .showMenu, .stashLeft, .stashRight, .stashAll, .stashAllExceptFront,
+             .hideApp, .quitApp, .showMenu, .keyboardGrid, .stashLeft, .stashRight, .stashAll, .stashAllExceptFront,
              .toggleStashed, .cycleStashed, .unstashAll, .togglePin, .reflowPin,
              .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown,
              .fillLeft, .fillRight, .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf:
             return w // these need other windows; AppState handles them
         }
+    }
+}
+
+/// The keyboard grid's layout: keys sit where their cells do (Q W E R / A S D F / Z X C V).
+enum KeyGrid {
+    struct Cell: Equatable {
+        let column: Int, row: Int
+    }
+
+    static let columns = 4, rows = 3
+    static let labels = [["Q", "W", "E", "R"], ["A", "S", "D", "F"], ["Z", "X", "C", "V"]]
+    /// Physical key positions (ANSI virtual key codes), so the grid matches the keyboard in any layout.
+    static let keyCodes = [[12, 13, 14, 15], [0, 1, 2, 3], [6, 7, 8, 9]]
+
+    static func cell(forKey code: Int) -> Cell? {
+        for (row, codes) in keyCodes.enumerated() {
+            if let column = codes.firstIndex(of: code) { return Cell(column: column, row: row) }
+        }
+        return nil
+    }
+
+    /// The rectangle spanning two cells in screen area `s` (the same cell twice fills just that cell).
+    static func frame(from a: Cell, to b: Cell, in s: CGRect, gap: CGFloat = 0) -> CGRect {
+        let area = s.insetBy(dx: gap / 2, dy: gap / 2)
+        let width = area.width / CGFloat(columns), height = area.height / CGFloat(rows)
+        let left = min(a.column, b.column), top = min(a.row, b.row)
+        return CGRect(x: area.minX + CGFloat(left) * width, y: area.minY + CGFloat(top) * height,
+                      width: CGFloat(abs(a.column - b.column) + 1) * width,
+                      height: CGFloat(abs(a.row - b.row) + 1) * height)
+            .insetBy(dx: gap / 2, dy: gap / 2)
     }
 }
 

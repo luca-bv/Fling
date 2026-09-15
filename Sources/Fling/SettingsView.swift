@@ -11,6 +11,7 @@ struct SettingsView: View {
             MouseSettings().tabItem { Label("Mouse", systemImage: "cursorarrow.motionlines") }
             CustomSettings().tabItem { Label("Custom", systemImage: "rectangle.dashed") }
             LayoutSettings().tabItem { Label("Layouts", systemImage: "rectangle.3.group") }
+            DiagnosticsSettings().tabItem { Label("Diagnostics", systemImage: "stethoscope") }
         }
         .frame(width: 540, height: 640)
     }
@@ -348,7 +349,7 @@ struct ShortcutRecorder: View {
     }
 
     private func start() {
-        state.isRecording = true
+        state.capturingKeys = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if Int(event.keyCode) == kVK_Escape, flags.isEmpty {
@@ -367,7 +368,7 @@ struct ShortcutRecorder: View {
         guard let monitor else { return }
         NSEvent.removeMonitor(monitor)
         self.monitor = nil
-        state.isRecording = false
+        state.capturingKeys = false
     }
 }
 
@@ -376,4 +377,61 @@ func runningAppChoices() -> [(id: String, name: String)] {
         .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
         .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+}
+
+/// Recent placements, with a plain-language reason when a window didn't end up where it was sent.
+private struct DiagnosticsSettings: View {
+    @Environment(AppState.self) private var state
+
+    var body: some View {
+        VStack(spacing: 0) {
+            List(state.diagnostics.reversed()) { entry in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Image(systemName: entry.problem == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(entry.problem == nil ? .green : .orange)
+                        Text(entry.command).bold()
+                        Text(entry.window.isEmpty ? entry.app : "\(entry.app) — \(entry.window)")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(entry.date, style: .time).foregroundStyle(.secondary)
+                    }
+                    if let problem = entry.problem {
+                        Text(problem).font(.callout)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .overlay {
+                if state.diagnostics.isEmpty {
+                    Text("Window actions will show up here.").foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Button("Copy Report") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(report(), forType: .string)
+                }
+                Button("Clear") { state.diagnostics.removeAll() }
+                Spacer()
+                Text("Last 100 actions").foregroundStyle(.secondary)
+            }
+            .padding(12)
+        }
+    }
+
+    private func report() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let header = "Fling \(version) on macOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n"
+            + "Accessibility: \(AXIsProcessTrusted() ? "granted" : "missing")\n"
+        let lines = state.diagnostics.map { entry in
+            [entry.date.formatted(date: .omitted, time: .standard), entry.command, entry.app, entry.window,
+             entry.requested.map { "to \(NSStringFromRect($0))" } ?? "", entry.actual.map { "got \(NSStringFromRect($0))" } ?? "",
+             entry.problem ?? "ok"]
+                .filter { !$0.isEmpty }
+                .joined(separator: " | ")
+        }
+        return header + lines.joined(separator: "\n")
+    }
 }

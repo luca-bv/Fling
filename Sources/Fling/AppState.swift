@@ -12,8 +12,8 @@ final class AppState {
     var layouts: [Layout] {
         didSet { Store.save(layouts, key: "layouts"); registerHotkeys() }
     }
-    /// Carbon hotkeys swallow key presses, so they're paused while the recorder listens.
-    var isRecording = false {
+    /// Hotkeys pause while keys are being captured (the shortcut recorder or the keyboard grid).
+    var capturingKeys = false {
         didSet { registerHotkeys() }
     }
 
@@ -28,6 +28,9 @@ final class AppState {
     @ObservationIgnored private(set) var cloudSync: CloudSync?
     @ObservationIgnored private var windowWatcher: WindowWatcher?
     @ObservationIgnored private(set) var contextMenu: ContextMenu?
+    @ObservationIgnored private(set) var keyboardGrid: KeyboardGrid?
+    /// Recent placements and failures, newest last, shown in Settings → Diagnostics.
+    var diagnostics: [DiagnosticEntry] = []
     @ObservationIgnored private var lastVisibleFrames = Screen.all().map(\.visible)
     @ObservationIgnored private var lastScreenIDs = Set(Screen.all().map(\.id))
     @ObservationIgnored private var displaySnapshots: [String: [(window: Window, frame: CGRect)]] = [:]
@@ -46,6 +49,7 @@ final class AppState {
         cloudSync = CloudSync(state: self)
         windowWatcher = WindowWatcher { [weak self] in self?.windowOpened($0) }
         contextMenu = ContextMenu(state: self)
+        keyboardGrid = KeyboardGrid(state: self)
         // ponytail: a 15 s snapshot can miss windows moved just before a display is unplugged.
         snapshotTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.snapshotDisplays() }
@@ -118,7 +122,7 @@ final class AppState {
 
     private func registerHotkeys() {
         Hotkeys.unregisterAll()
-        guard !isRecording else { return }
+        guard !capturingKeys else { return }
         for (action, shortcut) in shortcuts {
             let repeats = [.nudgeLeft, .nudgeRight, .nudgeUp, .nudgeDown, .larger, .smaller].contains(action)
             Hotkeys.register(shortcut, repeats: repeats) { [weak self] in self?.perform(action) }
@@ -149,8 +153,13 @@ final class AppState {
         case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf: return arrange(action)
         default: break
         }
-        guard let window = given ?? Window.focused() else { return NSSound.beep() }
+        guard let window = given ?? Window.focused() else {
+            log(action.title, problem: "No focused window to act on")
+            return NSSound.beep()
+        }
         switch action {
+        case .keyboardGrid:
+            return keyboardGrid?.show(for: window) ?? ()
         case .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown:
             guard let frame = window.frame else { return }
             let current = Action.allCases.filter { $0.category == .halves || $0.category == .corners || $0 == .maximize }
@@ -165,7 +174,10 @@ final class AppState {
         default: break
         }
         if window.performControl(action) { return }
-        guard let frame = window.frame else { return NSSound.beep() }
+        guard let frame = window.frame else {
+            log(action.title, window: window, problem: "Couldn't read the window's frame; the app may not support Accessibility")
+            return NSSound.beep()
+        }
 
         // Repeating a half action on a window that hasn't moved since cycles its size.
         let cycles = action.category == .halves && UserDefaults.standard.bool(forKey: Prefs.cycleHalves)
@@ -283,8 +295,51 @@ final class AppState {
         // Restore returns to the frame from before the first Fling action.
         if rememberRestore, restoreFrames[window.element] == nil { restoreFrames[window.element] = frame }
         stash.forget(window)
-        window.setFrame(target)
+        let result = window.setFrame(target)
         last = (key, window.element, target, count)
+
+        let actual = window.frame
+        let problem: String? = if result != .success {
+            describe(result)
+        } else if let actual, !actual.isClose(to: target) {
+            "The app kept the window at \(Int(actual.width))×\(Int(actual.height)) at (\(Int(actual.minX)), \(Int(actual.minY))) "
+                + "instead of \(Int(target.width))×\(Int(target.height)) (a minimum or maximum window size, or a screen edge)"
+        } else {
+            nil
+        }
+        log(Action(rawValue: key)?.title ?? titleCase(key), window: window, requested: target, actual: actual, problem: problem)
+    }
+
+    /// Places a window at an exact frame, remembering the old one for Restore (used by the keyboard grid).
+    func place(_ window: Window, at target: CGRect, key: String) {
+        guard let frame = window.frame else { return }
+        place(window, from: frame, to: target, key: key, count: 0)
+        lastPlacement[window.element] = nil
+    }
+
+    /// The usable area of the screen a window is on (Pin Mode's strip excluded).
+    func usableArea(for window: Window, frame: CGRect) -> CGRect? {
+        let screens = Screen.all()
+        guard !screens.isEmpty else { return nil }
+        return usableArea(screens, screenIndex(for: frame, in: screens.map(\.visible)), for: window)
+    }
+
+    private func log(_ command: String, window: Window? = nil, requested: CGRect? = nil, actual: CGRect? = nil, problem: String?) {
+        let app = window.flatMap { NSRunningApplication(processIdentifier: $0.pid)?.localizedName } ?? "—"
+        diagnostics.append(DiagnosticEntry(command: command, app: app, window: window?.title ?? "",
+                                           requested: requested, actual: actual, problem: problem))
+        if diagnostics.count > 100 { diagnostics.removeFirst(diagnostics.count - 100) }
+    }
+
+    private func describe(_ error: AXError) -> String {
+        switch error {
+        case .apiDisabled: "Accessibility permission is missing"
+        case .cannotComplete: "The app didn't respond (it may be busy or hung)"
+        case .attributeUnsupported, .actionUnsupported: "This window can't be moved or resized"
+        case .notImplemented: "The app doesn't support Accessibility"
+        case .invalidUIElement: "The window no longer exists"
+        default: "Accessibility error \(error.rawValue)"
+        }
     }
 
     // MARK: Pin Mode
@@ -434,7 +489,10 @@ final class AppState {
             })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.runLayouts(for: .wake) }
+                MainActor.assumeIsolated {
+                    self?.runLayouts(for: .wake)
+                    self?.restashSoon()
+                }
             })
     }
 
@@ -456,6 +514,7 @@ final class AppState {
                 }
             }
         }
+        restashSoon()
         if count > screenCount { runLayouts(for: .displayConnected) }
         if count < screenCount { runLayouts(for: .displayDisconnected) }
         if count == screenCount, visible != lastVisibleFrames, UserDefaults.standard.bool(forKey: Prefs.adjustForDock) {
@@ -497,9 +556,29 @@ final class AppState {
         }
     }
 
+    /// macOS pulls off-screen windows back into view after sleep and display changes; tuck stashed ones away again.
+    private func restashSoon() {
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            stash.reapply()
+        }
+    }
+
     private func regularApps() -> [NSRunningApplication] {
         NSWorkspace.shared.runningApplications.filter {
             $0.activationPolicy == .regular && !$0.isHidden && $0.processIdentifier != getpid()
         }
     }
+}
+
+struct DiagnosticEntry: Identifiable {
+    let id = UUID()
+    let date = Date()
+    let command: String
+    let app: String
+    let window: String
+    var requested: CGRect?
+    var actual: CGRect?
+    /// nil when the action worked.
+    let problem: String?
 }

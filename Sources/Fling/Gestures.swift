@@ -97,7 +97,11 @@ final class Gestures {
             throwMoved(to: p)
             manipulate(to: p)
             state.stash.mouseMoved(to: p)
+        case .keyDown where state.keyboardGrid?.isShowing == true:
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return false }
+            return state.keyboardGrid?.handleKey(Int(event.getIntegerValueField(.keyboardEventKeycode))) != true
         case .leftMouseDown, .keyDown:
+            state.keyboardGrid?.hide()
             // A click or a shortcut using the same modifiers means the user isn't throwing.
             quick = nil
             if let t = throwing, t.byModifiers { endThrow(apply: false) }
@@ -356,8 +360,10 @@ final class Gestures {
 @MainActor
 final class Overlay {
     private let panel: NSPanel
+    let color: NSColor
 
     init(cornerRadius: CGFloat, alpha: CGFloat = 0.25, color: NSColor = .controlAccentColor) {
+        self.color = color
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.isOpaque = false
         panel.backgroundColor = .clear

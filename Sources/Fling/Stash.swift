@@ -14,6 +14,7 @@ final class Stash {
         let screen: CGRect
         /// Optional colored tab on the screen edge; hovering it reveals only this window.
         var tab: (overlay: Overlay, frame: CGRect)?
+        var tabColor: NSColor?
         var revealed = false
         /// Shown by Toggle or Cycle rather than by hovering, so moving the cursor away doesn't tuck it back.
         var held = false
@@ -25,7 +26,7 @@ final class Stash {
     private var pendingReveal: Task<Void, Never>?
 
     /// Stashes a window against `edge`, or the nearer edge when nil.
-    func stash(_ window: Window, to edge: Edge? = nil) {
+    func stash(_ window: Window, to edge: Edge? = nil, tabColor: NSColor? = nil) {
         guard let frame = window.frame else { return }
         forget(window)
         let screens = Screen.all()
@@ -41,11 +42,23 @@ final class Stash {
                           edge: edge, screen: screen.frame)
         if UserDefaults.standard.bool(forKey: Prefs.stashColorTabs) {
             let tabFrame = tabFrame(for: entry)
-            entry.tab = (Overlay(cornerRadius: 3, alpha: 0.9, color: Self.randomColor()), tabFrame)
+            entry.tab = (Overlay(cornerRadius: 3, alpha: 0.9, color: tabColor ?? Self.randomColor()), tabFrame)
+            entry.tabColor = tabColor ?? entry.tab?.overlay.color
             entry.tab?.overlay.show(tabFrame)
         }
         window.setFrame(entry.hidden)
         entries.append(entry)
+    }
+
+    /// Tucks tucked-away windows back after macOS pulled them on screen (sleep, display changes).
+    func reapply() {
+        for entry in entries where !entry.revealed {
+            guard entry.window.frame != nil else {
+                forget(entry.window)
+                continue
+            }
+            stash(entry.window, to: entry.edge, tabColor: entry.tabColor)
+        }
     }
 
     /// Stashes every visible window to its nearer edge, optionally keeping the focused one out.
