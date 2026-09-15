@@ -1,0 +1,505 @@
+import AppKit
+import SwiftUI
+
+@MainActor @Observable
+final class AppState {
+    var shortcuts: [Action: Shortcut] {
+        didSet { UserDefaults.standard.set(ShortcutStorage.encode(shortcuts), forKey: "shortcuts"); registerHotkeys() }
+    }
+    var customActions: [CustomAction] {
+        didSet { Store.save(customActions, key: "customActions"); registerHotkeys() }
+    }
+    var layouts: [Layout] {
+        didSet { Store.save(layouts, key: "layouts"); registerHotkeys() }
+    }
+    /// Carbon hotkeys swallow key presses, so they're paused while the recorder listens.
+    var isRecording = false {
+        didSet { registerHotkeys() }
+    }
+
+    @ObservationIgnored let stash = Stash()
+    // ponytail: keyed by live AX elements and never pruned; prune on window close if they grow.
+    @ObservationIgnored private var restoreFrames: [AXUIElement: CGRect] = [:]
+    @ObservationIgnored private var lastPlacement: [AXUIElement: Action] = [:]
+    @ObservationIgnored private var last: (key: String, element: AXUIElement, frame: CGRect, count: Int)?
+    @ObservationIgnored private var gestures: Gestures?
+    @ObservationIgnored private var screenCount = NSScreen.screens.count
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private(set) var cloudSync: CloudSync?
+    @ObservationIgnored private var windowWatcher: WindowWatcher?
+    @ObservationIgnored private(set) var contextMenu: ContextMenu?
+    @ObservationIgnored private var lastVisibleFrames = Screen.all().map(\.visible)
+    @ObservationIgnored private var lastScreenIDs = Set(Screen.all().map(\.id))
+    @ObservationIgnored private var displaySnapshots: [String: [(window: Window, frame: CGRect)]] = [:]
+    @ObservationIgnored private var snapshotTimer: Timer?
+
+    init() {
+        Prefs.register()
+        // Shows the system Accessibility prompt if Fling isn't trusted yet.
+        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        shortcuts = ShortcutStorage.decode(UserDefaults.standard.data(forKey: "shortcuts"))
+        customActions = Store.load("customActions") ?? []
+        layouts = Store.load("layouts") ?? []
+        registerHotkeys()
+        gestures = Gestures(state: self)
+        observeTriggers()
+        cloudSync = CloudSync(state: self)
+        windowWatcher = WindowWatcher { [weak self] in self?.windowOpened($0) }
+        contextMenu = ContextMenu(state: self)
+        // ponytail: a 15 s snapshot can miss windows moved just before a display is unplugged.
+        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.snapshotDisplays() }
+        }
+    }
+
+    // MARK: Configuration
+
+    func exportConfig() -> Data? {
+        Config(shortcuts: ShortcutStorage.dictionary(shortcuts), customActions: customActions,
+               layouts: layouts, preferences: Prefs.snapshot()).encoded()
+    }
+
+    /// Replaces shortcuts, custom positions, layouts and settings. Returns false for unreadable data.
+    @discardableResult
+    func importConfig(_ data: Data) -> Bool {
+        guard let config = Config.decode(data) else { return false }
+        shortcuts = ShortcutStorage.merged(saved: config.shortcuts)
+        customActions = config.customActions
+        layouts = config.layouts
+        Prefs.restore(config.preferences)
+        return true
+    }
+
+    // MARK: Shortcuts & URLs
+
+    func binding(for action: Action) -> Binding<Shortcut?> {
+        Binding(get: { self.shortcuts[action] },
+                set: { self.releaseKeys(of: $0); self.shortcuts[action] = $0 })
+    }
+
+    func binding(forCustom id: UUID) -> Binding<Shortcut?> {
+        Binding(get: { self.customActions.first { $0.id == id }?.shortcut },
+                set: { new in
+                    self.releaseKeys(of: new)
+                    if let i = self.customActions.firstIndex(where: { $0.id == id }) { self.customActions[i].shortcut = new }
+                })
+    }
+
+    func binding(forLayout id: UUID) -> Binding<Shortcut?> {
+        Binding(get: { self.layouts.first { $0.id == id }?.shortcut },
+                set: { new in
+                    self.releaseKeys(of: new)
+                    if let i = self.layouts.firstIndex(where: { $0.id == id }) { self.layouts[i].shortcut = new }
+                })
+    }
+
+    /// A key combination belongs to one command, so assigning it takes it from any other.
+    private func releaseKeys(of shortcut: Shortcut?) {
+        guard let shortcut else { return }
+        if shortcuts.values.contains(where: { $0.sameKeys(as: shortcut) }) {
+            shortcuts = shortcuts.filter { !$0.value.sameKeys(as: shortcut) }
+        }
+        for i in customActions.indices where customActions[i].shortcut?.sameKeys(as: shortcut) == true {
+            customActions[i].shortcut = nil
+        }
+        for i in layouts.indices where layouts[i].shortcut?.sameKeys(as: shortcut) == true {
+            layouts[i].shortcut = nil
+        }
+    }
+
+    func handle(_ url: URL) {
+        switch URLCommand(url) {
+        case .action(let action): perform(action)
+        case .custom(let name): customActions.first { $0.name == name }.map { perform(custom: $0.id) }
+        case .layout(let name): layouts.first { $0.name == name }.map { apply(layout: $0.id) }
+        case nil: NSLog("Fling: unrecognized URL \(url)")
+        }
+    }
+
+    private func registerHotkeys() {
+        Hotkeys.unregisterAll()
+        guard !isRecording else { return }
+        for (action, shortcut) in shortcuts {
+            let repeats = [.nudgeLeft, .nudgeRight, .nudgeUp, .nudgeDown, .larger, .smaller].contains(action)
+            Hotkeys.register(shortcut, repeats: repeats) { [weak self] in self?.perform(action) }
+        }
+        for custom in customActions {
+            guard let shortcut = custom.shortcut else { continue }
+            Hotkeys.register(shortcut) { [weak self] in self?.perform(custom: custom.id) }
+        }
+        for layout in layouts {
+            guard let shortcut = layout.shortcut else { continue }
+            Hotkeys.register(shortcut) { [weak self] in self?.apply(layout: layout.id) }
+        }
+    }
+
+    // MARK: Actions
+
+    /// Runs an action on a window (the focused one by default), optionally on a specific screen.
+    func perform(_ action: Action, on given: Window? = nil, screen: Int? = nil) {
+        switch action {
+        case .unstashAll: return stash.unstashAll()
+        case .stashAll: return stash.stashAll(exceptFocused: false)
+        case .stashAllExceptFront: return stash.stashAll(exceptFocused: true)
+        case .toggleStashed: return stash.toggleAll()
+        case .cycleStashed: return stash.cycle()
+        case .showMenu: return contextMenu?.show(for: Window.focused(), at: CGEvent(source: nil)?.location ?? .zero) ?? ()
+        case .togglePin: return togglePin()
+        case .reflowPin: return reflowPin()
+        case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf: return arrange(action)
+        default: break
+        }
+        guard let window = given ?? Window.focused() else { return NSSound.beep() }
+        switch action {
+        case .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown:
+            guard let frame = window.frame else { return }
+            let current = Action.allCases.filter { $0.category == .halves || $0.category == .corners || $0 == .maximize }
+                .first { target(for: $0, window: window, frame: frame)?.isClose(to: frame) == true }
+            return perform(winArrowAction(action, from: current) ?? .restore, on: window, screen: screen)
+        case .stashLeft: return stash.stash(window, to: .left)
+        case .stashRight: return stash.stash(window, to: .right)
+        case .nextSpace, .previousSpace:
+            stash.forget(window)
+            Task { await window.moveToAdjacentSpace(right: action == .nextSpace) }
+            return
+        default: break
+        }
+        if window.performControl(action) { return }
+        guard let frame = window.frame else { return NSSound.beep() }
+
+        // Repeating a half action on a window that hasn't moved since cycles its size.
+        let cycles = action.category == .halves && UserDefaults.standard.bool(forKey: Prefs.cycleHalves)
+        let count = cycles ? repeatCount(action.rawValue, window, frame) : 0
+        guard let target = target(for: action, window: window, frame: frame, screen: screen, repeatCount: count) else { return }
+
+        if action == .restore { restoreFrames[window.element] = nil }
+        place(window, from: frame, to: target, key: action.rawValue, count: count, rememberRestore: action != .restore)
+        lastPlacement[window.element] = action.placesWindow ? action : nil
+
+        // Keyboard and menu commands that send a window to another display bring the cursor along.
+        let visibles = Screen.all().map(\.visible)
+        if given == nil, UserDefaults.standard.bool(forKey: Prefs.moveCursorWithWindow),
+           screenIndex(for: frame, in: visibles) != screenIndex(for: target, in: visibles) {
+            CGWarpMouseCursorPosition(CGPoint(x: target.midX, y: target.midY))
+        }
+    }
+
+    func perform(custom id: UUID, on given: Window? = nil) {
+        guard let custom = customActions.first(where: { $0.id == id }),
+              let window = given ?? Window.focused(), let frame = window.frame else { return NSSound.beep() }
+        // Repeating the shortcut steps through the entry's extra frames.
+        let count = repeatCount(id.uuidString, window, frame)
+        guard let target = customFrame(custom, window: window, frame: frame, repeatCount: count) else { return }
+        place(window, from: frame, to: target, key: id.uuidString, count: count)
+        lastPlacement[window.element] = nil
+    }
+
+    /// Custom positions marked as snap targets, placed for this window.
+    func snapTargets(for window: Window, frame: CGRect) -> [(id: UUID, frame: CGRect)] {
+        customActions.filter(\.snapTarget).compactMap { custom in
+            customFrame(custom, window: window, frame: frame, repeatCount: 0).map { (custom.id, $0) }
+        }
+    }
+
+    private func customFrame(_ custom: CustomAction, window: Window, frame: CGRect, repeatCount: Int) -> CGRect? {
+        let screens = Screen.all()
+        guard !custom.frames.isEmpty, !screens.isEmpty else { return nil }
+        let current = screenIndex(for: frame, in: screens.map(\.visible))
+        let area = usableArea(screens, custom.display.resolve(current: current, count: screens.count), for: window)
+        return custom.frames[repeatCount % custom.frames.count].frame(for: frame, in: area)
+    }
+
+    /// Where an action would put the window, without moving it (also used for footprint previews).
+    func target(for action: Action, window: Window, frame: CGRect, screen: Int? = nil, repeatCount: Int = 0) -> CGRect? {
+        let screens = Screen.all()
+        guard !screens.isEmpty else { return nil }
+        let current = screenIndex(for: frame, in: screens.map(\.visible))
+        switch action {
+        case .restore:
+            return restoreFrames[window.element]
+        case .nextDisplay, .previousDisplay:
+            let next = (current + (action == .nextDisplay ? 1 : -1) + screens.count) % screens.count
+            return map(frame, from: usableArea(screens, current, for: window), to: usableArea(screens, next, for: window))
+        case .fillLeft, .fillRight:
+            let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap))
+            let area = usableArea(screens, screen ?? current, for: window)
+            let others = Window.visible().filter { $0.element != window.element }.compactMap(\.frame)
+            return fillFrame(left: action == .fillLeft, others: others, in: area.insetBy(dx: gap / 2, dy: gap / 2))
+                .insetBy(dx: gap / 2, dy: gap / 2)
+        default:
+            let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap))
+            let area = usableArea(screens, screen ?? current, for: window)
+            return action.frame(for: frame, in: area, gap: gap, repeatCount: repeatCount)
+        }
+    }
+
+    /// Tiling, cascading and app-wide halves, on the focused window's screen.
+    private func arrange(_ action: Action) {
+        let screens = Screen.all()
+        guard !screens.isEmpty else { return }
+        let visibles = screens.map(\.visible)
+        let index = Window.focused()?.frame.map { screenIndex(for: $0, in: visibles) } ?? 0
+        let area = usableArea(screens, index, for: nil)
+        let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap))
+        let pinned = UserDefaults.standard.bool(forKey: Prefs.pinEnabled) ? UserDefaults.standard.string(forKey: Prefs.pinBundleID) : nil
+        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let appOnly = [.cascadeApp, .appLeftHalf, .appRightHalf].contains(action)
+
+        let windows = Window.visible().filter { window in
+            guard let frame = window.frame, screenIndex(for: frame, in: visibles) == index else { return false }
+            return (!appOnly || window.pid == frontmost) && (pinned == nil || window.bundleID != pinned)
+        }
+        let placements: [(Window, CGRect)]
+        switch action {
+        case .tile2x2:
+            placements = Array(zip(windows, tileFrames(count: windows.count, columns: 2, rows: 2, in: area, gap: gap)))
+        case .tile2x3:
+            placements = Array(zip(windows, tileFrames(count: windows.count, columns: 3, rows: 2, in: area, gap: gap)))
+        case .cascadeAll, .cascadeApp:
+            // Back-most window goes top-left, so the front window stays on top at the end of the cascade.
+            let backToFront = Array(windows.reversed())
+            placements = Array(zip(backToFront, cascadeFrames(sizes: backToFront.map { $0.frame?.size ?? .zero }, in: area)))
+        default:
+            let half: Action = action == .appLeftHalf ? .leftHalf : .rightHalf
+            placements = windows.map { ($0, half.frame(for: .zero, in: area, gap: gap)) }
+        }
+        for (window, frame) in placements {
+            place(window, from: window.frame ?? frame, to: frame, key: action.rawValue, count: 0)
+        }
+    }
+
+    /// Dragging a snapped window away gives it back its size from before it was snapped.
+    func unsnapped(_ window: Window) {
+        guard let saved = restoreFrames.removeValue(forKey: window.element) else { return }
+        window.setSize(saved.size)
+    }
+
+    private func repeatCount(_ key: String, _ window: Window, _ frame: CGRect) -> Int {
+        guard let last, last.key == key, last.element == window.element, last.frame.isClose(to: frame) else { return 0 }
+        return last.count + 1
+    }
+
+    private func place(_ window: Window, from frame: CGRect, to target: CGRect, key: String, count: Int, rememberRestore: Bool = true) {
+        // Restore returns to the frame from before the first Fling action.
+        if rememberRestore, restoreFrames[window.element] == nil { restoreFrames[window.element] = frame }
+        stash.forget(window)
+        window.setFrame(target)
+        last = (key, window.element, target, count)
+    }
+
+    // MARK: Pin Mode
+
+    /// The screen's usable frame: Pin Mode's strip is reserved for the pinned app on the primary display.
+    private func usableArea(_ screens: [Screen], _ index: Int, for window: Window?) -> CGRect {
+        let screen = screens[index]
+        guard let pin = pinArea(screen), window?.bundleID != UserDefaults.standard.string(forKey: Prefs.pinBundleID) else {
+            return screen.visible
+        }
+        return pin.rest
+    }
+
+    private func pinArea(_ screen: Screen) -> (pinned: CGRect, rest: CGRect)? {
+        let defaults = UserDefaults.standard
+        guard screen.isPrimary, defaults.bool(forKey: Prefs.pinEnabled),
+              !(defaults.string(forKey: Prefs.pinBundleID) ?? "").isEmpty else { return nil }
+        return pinSplit(screen.visible, width: defaults.string(forKey: Prefs.pinWidth) ?? "1/4",
+                        right: defaults.bool(forKey: Prefs.pinRight))
+    }
+
+    private func togglePin() {
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: Prefs.pinEnabled), (defaults.string(forKey: Prefs.pinBundleID) ?? "").isEmpty {
+            guard let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return }
+            defaults.set(frontmost, forKey: Prefs.pinBundleID)
+        }
+        defaults.set(!defaults.bool(forKey: Prefs.pinEnabled), forKey: Prefs.pinEnabled)
+        reflowPin()
+    }
+
+    /// Puts the pinned app into its strip and slides other windows out of it.
+    func reflowPin() {
+        guard let screen = Screen.all().first(where: \.isPrimary), let area = pinArea(screen),
+              let pinnedID = UserDefaults.standard.string(forKey: Prefs.pinBundleID) else { return }
+        for app in regularApps() {
+            for window in Window.all(of: app.processIdentifier) {
+                guard let frame = window.frame else { continue }
+                if app.bundleIdentifier == pinnedID {
+                    window.setFrame(area.pinned)
+                } else if frame.intersects(area.pinned) {
+                    window.setFrame(clamp(frame, into: area.rest))
+                }
+            }
+        }
+    }
+
+    // MARK: Layouts
+
+    func saveCurrentLayout() {
+        let screens = Screen.all()
+        guard !screens.isEmpty else { return }
+        var entries: [LayoutEntry] = []
+        for app in regularApps() {
+            guard let bundleID = app.bundleIdentifier else { continue }
+            for window in Window.all(of: app.processIdentifier) {
+                guard let frame = window.frame else { continue }
+                let index = screenIndex(for: frame, in: screens.map(\.visible))
+                var entry = LayoutEntry(bundleID: bundleID, appName: app.localizedName ?? bundleID, title: window.title)
+                entry.display = .index(index)
+                // Prefer the Fling action that placed the window, so the layout adapts to other screen sizes.
+                if let action = lastPlacement[window.element],
+                   target(for: action, window: window, frame: frame, screen: index)?.isClose(to: frame) == true {
+                    entry.action = action
+                } else {
+                    entry.frame = .absolute(frame, in: screens[index].visible)
+                }
+                entries.append(entry)
+            }
+        }
+        layouts.append(Layout(name: "Layout \(layouts.count + 1)", entries: entries))
+    }
+
+    func apply(layout id: UUID, launchMissing: Bool = true) {
+        let screens = Screen.all()
+        guard let layout = layouts.first(where: { $0.id == id }), !screens.isEmpty else { return }
+        var launched = false
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let bundleIDs = Set(layout.entries.map(\.bundleID)).filter { !layout.frontmostAppOnly || $0 == frontmost }
+
+        for bundleID in bundleIDs {
+            let entries = layout.entries.filter { $0.bundleID == bundleID }
+            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else {
+                if launchMissing, layout.launchApps, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                    launched = true
+                }
+                continue
+            }
+            if app.isHidden { app.unhide() }
+            let windows = Window.all(of: app.processIdentifier)
+            let pairs = LayoutEntry.match(entries, titles: windows.map(\.title))
+            for (e, w) in pairs {
+                place(windows[w], with: entries[e], screens: screens)
+            }
+            if layout.allMatches {
+                for (w, window) in windows.enumerated() where !pairs.contains(where: { $0.window == w }) {
+                    if let entry = entries.first(where: { $0.titleMatch == .any || $0.matches(title: window.title) }) {
+                        place(window, with: entry, screens: screens)
+                    }
+                }
+            }
+            if layout.bringToFront {
+                windows.forEach { $0.raise() }
+            }
+        }
+
+        if layout.hideOtherApps {
+            for app in regularApps() where !bundleIDs.contains(app.bundleIdentifier ?? "") { app.hide() }
+        }
+        if launched {
+            // Newly launched apps need a moment to open their windows.
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                apply(layout: id, launchMissing: false)
+            }
+        }
+    }
+
+    private func place(_ window: Window, with entry: LayoutEntry, screens: [Screen]) {
+        guard let frame = window.frame else { return }
+        let current = screenIndex(for: frame, in: screens.map(\.visible))
+        let display = entry.display.resolve(current: current, count: screens.count)
+        let destination = entry.action.flatMap { target(for: $0, window: window, frame: frame, screen: display) }
+            ?? entry.frame.frame(for: frame, in: usableArea(screens, display, for: window))
+        place(window, from: frame, to: destination, key: "layout", count: 0)
+        lastPlacement[window.element] = entry.action
+    }
+
+    /// "Apply when a window opens" layouts place just the new window, using the first entry that matches it.
+    private func windowOpened(_ window: Window) {
+        let screens = Screen.all()
+        guard let bundleID = window.bundleID, !screens.isEmpty else { return }
+        for layout in layouts where layout.triggers.contains(.windowOpened) {
+            let candidates = layout.entries.filter { $0.bundleID == bundleID }
+            if let entry = candidates.first(where: { $0.titleMatch != .loose && $0.matches(title: window.title) })
+                ?? candidates.first(where: { $0.titleMatch == .loose || $0.titleMatch == .any }) {
+                return place(window, with: entry, screens: screens)
+            }
+        }
+    }
+
+    private func observeTriggers() {
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.screensChanged() }
+            })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.runLayouts(for: .wake) }
+            })
+    }
+
+    private func screensChanged() {
+        let count = NSScreen.screens.count
+        let screens = Screen.all()
+        let visible = screens.map(\.visible)
+        let reconnected = Set(screens.map(\.id)).subtracting(lastScreenIDs)
+        defer {
+            screenCount = count
+            lastVisibleFrames = visible
+            lastScreenIDs = Set(screens.map(\.id))
+        }
+        if !reconnected.isEmpty, UserDefaults.standard.bool(forKey: Prefs.restoreDisplayLayouts) {
+            Task {
+                try? await Task.sleep(for: .seconds(1.5)) // let macOS finish moving windows around first
+                for id in reconnected {
+                    for (window, frame) in displaySnapshots[id] ?? [] { window.setFrame(frame) }
+                }
+            }
+        }
+        if count > screenCount { runLayouts(for: .displayConnected) }
+        if count < screenCount { runLayouts(for: .displayDisconnected) }
+        if count == screenCount, visible != lastVisibleFrames, UserDefaults.standard.bool(forKey: Prefs.adjustForDock) {
+            followUsableArea(from: lastVisibleFrames, to: visible)
+        }
+    }
+
+    /// Remembers where windows sit on each display, so they can return when it's reconnected.
+    private func snapshotDisplays() {
+        guard UserDefaults.standard.bool(forKey: Prefs.restoreDisplayLayouts), NSScreen.screens.count > 1 else { return }
+        let screens = Screen.all()
+        var byDisplay: [String: [(window: Window, frame: CGRect)]] = [:]
+        for window in Window.visible() {
+            guard let frame = window.frame else { continue }
+            byDisplay[screens[screenIndex(for: frame, in: screens.map(\.visible))].id, default: []].append((window, frame))
+        }
+        for screen in screens { displaySnapshots[screen.id] = byDisplay[screen.id] ?? [] }
+    }
+
+    /// The Dock was shown, hidden or moved: windows flush against a changed edge follow it.
+    private func followUsableArea(from old: [CGRect], to new: [CGRect]) {
+        let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap)) / 2
+        for window in Window.visible() {
+            guard let frame = window.frame else { continue }
+            let i = screenIndex(for: frame, in: old)
+            guard old[i] != new[i],
+                  let target = adjusted(frame, from: old[i].insetBy(dx: gap, dy: gap), to: new[i].insetBy(dx: gap, dy: gap),
+                                        tolerance: gap + 2) else { continue }
+            window.setFrame(target)
+        }
+    }
+
+    private func runLayouts(for trigger: Layout.Trigger) {
+        let ids = layouts.filter { $0.triggers.contains(trigger) }.map(\.id)
+        guard !ids.isEmpty else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(1)) // let the display arrangement settle
+            ids.forEach { apply(layout: $0) }
+        }
+    }
+
+    private func regularApps() -> [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && !$0.isHidden && $0.processIdentifier != getpid()
+        }
+    }
+}
