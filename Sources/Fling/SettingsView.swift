@@ -209,8 +209,10 @@ private struct ShortcutSettings: View {
             ForEach(Action.Category.allCases, id: \.self) { category in
                 Section(category.rawValue) {
                     ForEach(Action.allCases.filter { $0.category == category }, id: \.self) { action in
-                        LabeledContent(action.title) {
+                        LabeledContent {
                             ShortcutRecorder(shortcut: state.binding(for: action))
+                        } label: {
+                            ActionLabel(action: action)
                         }
                     }
                 }
@@ -376,7 +378,7 @@ private struct PositionPicker: View {
         Picker(title, selection: $selection) {
             Text("None").tag("none")
             ForEach(extra, id: \.value) { Text($0.title).tag($0.value) }
-            ForEach(Action.allCases.filter(\.placesWindow), id: \.self) { Text($0.title).tag($0.rawValue) }
+            ForEach(Action.allCases.filter(\.placesWindow), id: \.self) { ActionLabel(action: $0).tag($0.rawValue) }
         }
     }
 }

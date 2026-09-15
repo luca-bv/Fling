@@ -117,7 +117,7 @@ private struct LayoutEntryEditor: View {
             }
             Picker("Place", selection: $entry.action) {
                 Text("Custom frame").tag(Action?.none)
-                ForEach(Action.allCases.filter(\.placesWindow), id: \.self) { Text($0.title).tag(Action?.some($0)) }
+                ForEach(Action.allCases.filter(\.placesWindow), id: \.self) { ActionLabel(action: $0).tag(Action?.some($0)) }
             }
             if entry.action == nil {
                 FrameSpecEditor(title: "Frame", spec: $entry.frame)

@@ -12,6 +12,8 @@ final class SnapAssist {
     private unowned let state: AppState
     private let panel: NSPanel
     private var choices: [Window] = []
+    /// Marks the row under the cursor.
+    private var hoverHighlight: NSView?
     /// Panel frame and the space to fill, in Accessibility coordinates.
     private var panelFrame = CGRect.null
     private(set) var area = CGRect.null
@@ -39,7 +41,9 @@ final class SnapAssist {
         panelFrame = CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
         self.area = area
         choices = candidates
-        panel.contentView = content(for: candidates, size: size)
+        let side = area.minX >= frame.maxX - 1 ? "on the right" : area.maxX <= frame.minX + 1 ? "on the left"
+            : area.minY >= frame.maxY - 1 ? "below" : "above"
+        panel.contentView = content(for: candidates, size: size, title: "Fill the space \(side)")
         panel.setFrame(flip(panelFrame, primaryHeight: primary.frame.height), display: true)
         panel.orderFrontRegardless()
     }
@@ -77,6 +81,20 @@ final class SnapAssist {
         return true
     }
 
+    /// Highlights the row under the cursor, so it's clear what a click picks.
+    func mouseMoved(to p: CGPoint) {
+        guard isShowing, let hoverHighlight else { return }
+        let row = Int((p.y - panelFrame.minY - Self.header) / Self.rowHeight)
+        let over = panelFrame.contains(p) && p.y >= panelFrame.minY + Self.header && row < choices.count
+        hoverHighlight.isHidden = !over
+        if over { hoverHighlight.frame.origin.y = rowY(row) }
+    }
+
+    /// A row's bottom edge in the panel's view (AppKit views use a bottom-left origin, so rows go from the top down).
+    private func rowY(_ index: Int) -> CGFloat {
+        panel.frame.height - Self.header - CGFloat(index + 1) * Self.rowHeight
+    }
+
     private func choose(_ index: Int) {
         let window = choices[index], target = area
         hide()
@@ -84,37 +102,67 @@ final class SnapAssist {
         window.raise()
     }
 
-    private func content(for windows: [Window], size: CGSize) -> NSView {
+    private func content(for windows: [Window], size: CGSize, title: String) -> NSView {
         let background = NSVisualEffectView(frame: CGRect(origin: .zero, size: size))
-        background.material = .hudWindow
+        background.material = .popover
         background.state = .active
         background.wantsLayer = true
         background.layer?.cornerRadius = 12
+        // Layer colors don't follow appearance changes on their own; resolve them for the current one.
+        var keycapBorder = CGColor.clear
+        panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+            keycapBorder = NSColor.tertiaryLabelColor.cgColor
+        }
 
-        // AppKit views use a bottom-left origin, so rows are laid out from the top down.
-        let title = NSTextField(labelWithString: "Fill the space with…")
-        title.font = .boldSystemFont(ofSize: 13)
-        title.frame = CGRect(x: 14, y: size.height - Self.header + 8, width: size.width - 28, height: 20)
-        background.addSubview(title)
+        let header = NSTextField(labelWithString: title)
+        header.font = .systemFont(ofSize: 13, weight: .semibold)
+        header.frame = CGRect(x: 14, y: size.height - Self.header + 10, width: size.width - 70, height: 18)
+        background.addSubview(header)
+        let escape = NSTextField(labelWithString: "esc")
+        escape.font = .systemFont(ofSize: 11)
+        escape.textColor = .tertiaryLabelColor
+        escape.alignment = .right
+        escape.frame = CGRect(x: size.width - 54, y: size.height - Self.header + 11, width: 40, height: 16)
+        background.addSubview(escape)
+
+        let highlight = NSView(frame: CGRect(x: 6, y: 0, width: size.width - 12, height: Self.rowHeight))
+        highlight.wantsLayer = true
+        highlight.layer?.cornerRadius = 7
+        highlight.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.22).cgColor
+        highlight.isHidden = true
+        background.addSubview(highlight)
+        hoverHighlight = highlight
 
         for (i, window) in windows.enumerated() {
             let y = size.height - Self.header - CGFloat(i + 1) * Self.rowHeight
+            let keycap = NSView(frame: CGRect(x: 14, y: y + 7, width: 20, height: 20))
+            keycap.wantsLayer = true
+            keycap.layer?.cornerRadius = 5
+            keycap.layer?.borderWidth = 1
+            keycap.layer?.borderColor = keycapBorder
+            let number = NSTextField(labelWithString: "\(i + 1)")
+            number.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            number.textColor = .secondaryLabelColor
+            number.alignment = .center
+            number.frame = CGRect(x: 0, y: 3, width: 20, height: 14)
+            keycap.addSubview(number)
+            background.addSubview(keycap)
+
             let app = NSRunningApplication(processIdentifier: window.pid)
-            let icon = NSImageView(frame: CGRect(x: 14, y: y + 5, width: 24, height: 24))
+            let icon = NSImageView(frame: CGRect(x: 44, y: y + 6, width: 22, height: 22))
             icon.image = app?.icon
             background.addSubview(icon)
 
-            let name = window.title.isEmpty ? (app?.localizedName ?? "Window") : "\(app?.localizedName ?? "") — \(window.title)"
-            let label = NSTextField(labelWithString: name)
+            let name = NSMutableAttributedString(string: app?.localizedName ?? "Window",
+                                                 attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor])
+            if !window.title.isEmpty {
+                name.append(NSAttributedString(string: "  " + window.title,
+                                               attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.secondaryLabelColor]))
+            }
+            let label = NSTextField(labelWithAttributedString: name)
             label.lineBreakMode = .byTruncatingTail
-            label.frame = CGRect(x: 46, y: y + 8, width: size.width - 90, height: 18)
+            label.frame = CGRect(x: 74, y: y + 8, width: size.width - 88, height: 18)
             background.addSubview(label)
-
-            let key = NSTextField(labelWithString: "\(i + 1)")
-            key.textColor = .secondaryLabelColor
-            key.alignment = .right
-            key.frame = CGRect(x: size.width - 38, y: y + 8, width: 24, height: 18)
-            background.addSubview(key)
         }
         return background
     }

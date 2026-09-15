@@ -41,7 +41,7 @@ final class Stash {
                           edge: edge, screen: screen.frame)
         if UserDefaults.standard.bool(forKey: Prefs.stashColorTabs) {
             let tabFrame = tabFrame(for: entry)
-            entry.tab = (Overlay(cornerRadius: 3, alpha: 0.9, color: tabColor ?? Self.randomColor()), tabFrame)
+            entry.tab = (Overlay(cornerRadius: 4, alpha: 0.9, color: tabColor ?? Self.randomColor()), tabFrame)
             entry.tab?.overlay.show(tabFrame)
         }
         window.setFrame(entry.hidden)
@@ -157,10 +157,10 @@ final class Stash {
         return atEdge && p.y >= entry.shown.minY && p.y <= entry.shown.maxY
     }
 
-    /// A 60pt tab beside the window's middle, pushed down past tabs already on that edge.
+    /// A 60pt pill beside the window's middle, pushed down past tabs already on that edge.
     private func tabFrame(for entry: Entry) -> CGRect {
-        let x = entry.edge == .left ? entry.screen.minX : entry.screen.maxX - 6
-        var frame = CGRect(x: x, y: entry.shown.midY - 30, width: 6, height: 60)
+        let x = entry.edge == .left ? entry.screen.minX : entry.screen.maxX - 8
+        var frame = CGRect(x: x, y: entry.shown.midY - 30, width: 8, height: 60)
         let taken = entries.filter { $0.edge == entry.edge && $0.screen == entry.screen }.compactMap { $0.tab?.frame }
         while taken.contains(where: { $0.insetBy(dx: 0, dy: -4).intersects(frame) }) {
             frame.origin.y += 68

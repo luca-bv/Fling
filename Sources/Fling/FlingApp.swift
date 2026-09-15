@@ -7,8 +7,10 @@ struct FlingApp: App {
     @AppStorage(Prefs.showMenuBarIcon) private var showMenuBarIcon = true
 
     var body: some Scene {
-        MenuBarExtra("Fling", systemImage: "rectangle.split.2x1", isInserted: $showMenuBarIcon) {
+        MenuBarExtra(isInserted: $showMenuBarIcon) {
             MenuContent().environment(delegate.state)
+        } label: {
+            Image(nsImage: Glyph.menuBar).accessibilityLabel("Fling")
         }
         Settings {
             SettingsView().environment(delegate.state)
@@ -126,11 +128,14 @@ private struct MenuContent: View {
 
     var body: some View {
         ForEach(Action.Category.allCases, id: \.self) { category in
-            Menu(category.rawValue) {
+            Menu {
                 ForEach(Action.allCases.filter { $0.category == category && $0 != .showMenu }, id: \.self) { action in
-                    Button(action.title) { state.perform(action) }
+                    Button { state.perform(action) } label: { ActionLabel(action: action) }
                         .keyboardShortcut(state.shortcuts[action].flatMap(keyboardShortcut))
                 }
+            } label: {
+                Label { Text(category.rawValue) } icon: { Glyph.image(for: category).map(Image.init(nsImage:)) }
+                    .labelStyle(.titleAndIcon)
             }
         }
         if !state.customActions.isEmpty {

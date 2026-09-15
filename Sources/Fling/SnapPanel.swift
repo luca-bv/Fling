@@ -80,6 +80,7 @@ final class SnapPanel {
     private func highlight(_ index: Int?) -> Action? {
         for (i, layer) in tileLayers.enumerated() {
             layer.backgroundColor = i == index ? NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor : nil
+            layer.transform = i == index ? CATransform3DMakeScale(1.1, 1.1, 1) : CATransform3DIdentity
         }
         return index.map { Self.actions[$0] }
     }

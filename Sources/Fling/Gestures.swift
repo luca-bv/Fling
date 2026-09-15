@@ -97,6 +97,8 @@ final class Gestures {
             throwMoved(to: p)
             manipulate(to: p)
             state.stash.mouseMoved(to: p)
+            state.snapAssist?.mouseMoved(to: p)
+            state.keyboardGrid?.mouseMoved(to: p)
         case .keyDown where state.keyboardGrid?.isShowing == true:
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return false }
             return state.keyboardGrid?.handleKey(Int(event.getIntegerValueField(.keyboardEventKeycode))) != true
@@ -376,6 +378,8 @@ final class Gestures {
 final class Overlay {
     private let panel: NSPanel
     let color: NSColor
+    /// Where the panel is headed, in AppKit coordinates; its frame lags behind while it glides.
+    private var target = CGRect.null
 
     init(cornerRadius: CGFloat, alpha: CGFloat = 0.25, color: NSColor = .controlAccentColor) {
         self.color = color
@@ -389,18 +393,31 @@ final class Overlay {
         let view = NSView()
         view.wantsLayer = true
         view.layer?.cornerRadius = cornerRadius
-        view.layer?.borderWidth = 2
+        view.layer?.borderWidth = 1.5
         view.layer?.backgroundColor = color.withAlphaComponent(alpha).cgColor
-        view.layer?.borderColor = color.withAlphaComponent(min(alpha * 3.2, 0.8)).cgColor
+        view.layer?.borderColor = color.withAlphaComponent(min(alpha * 2.4, 0.7)).cgColor
         panel.contentView = view
     }
 
-    /// `frame` is in Accessibility coordinates.
+    /// `frame` is in Accessibility coordinates. A visible overlay glides to a new frame; a hidden one fades in.
     func show(_ frame: CGRect) {
         guard let primary = NSScreen.screens.first else { return }
         let appKitFrame = flip(frame, primaryHeight: primary.frame.height)
-        if panel.frame != appKitFrame { panel.setFrame(appKitFrame, display: true) }
-        if !panel.isVisible { panel.orderFrontRegardless() }
+        guard panel.isVisible else {
+            target = appKitFrame
+            panel.setFrame(appKitFrame, display: true)
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.08; panel.animator().alphaValue = 1 }
+            return
+        }
+        guard target != appKitFrame else { return }
+        target = appKitFrame
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(appKitFrame, display: true)
+        }
     }
 
     func hide() {

@@ -17,7 +17,10 @@ final class ContextMenu: NSObject {
         let menu = NSMenu()
         for category in Action.Category.allCases {
             let actions = Action.allCases.filter { $0.category == category && $0 != .showMenu }
-            menu.addItem(submenu(category.rawValue, actions.map { ($0.title, $0.rawValue) }))
+            let item = submenu(category.rawValue, actions.map { ($0.title, $0.rawValue) })
+            item.image = Glyph.image(for: category)
+            item.submenu?.items.forEach { $0.image = Action(rawValue: $0.representedObject as? String ?? "").map(Glyph.image(for:)) }
+            menu.addItem(item)
         }
         if !state.customActions.isEmpty {
             menu.addItem(submenu("Custom", state.customActions.map { ($0.name, "custom:" + $0.id.uuidString) }))
