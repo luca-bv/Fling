@@ -26,11 +26,8 @@ final class SnapPanel {
         panel.level = .popUpMenu
         panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle, .fullScreenAuxiliary]
 
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 12
+        let background = roundedMaterial(.hudWindow, cornerRadius: 12)
+        background.wantsLayer = true // tiles are sublayers
         panel.contentView = background
 
         for (i, action) in Self.actions.enumerated() {
@@ -59,6 +56,7 @@ final class SnapPanel {
         frame = CGRect(x: screen.visible.midX - size.width / 2, y: screen.visible.minY + 24, width: size.width, height: size.height)
         panel.setFrame(flip(frame, primaryHeight: primary.frame.height), display: true)
         panel.orderFrontRegardless()
+        panel.invalidateShadow()
     }
 
     func hide() {
@@ -84,4 +82,23 @@ final class SnapPanel {
         }
         return index.map { Self.actions[$0] }
     }
+}
+
+/// A material background with rounded corners for a borderless panel. The mask image, unlike `layer.cornerRadius`,
+/// also shapes the window itself, so the blur and the window shadow follow the corners instead of leaving a square
+/// edge around the panel.
+func roundedMaterial(_ material: NSVisualEffectView.Material, cornerRadius: CGFloat) -> NSVisualEffectView {
+    let view = NSVisualEffectView()
+    view.material = material
+    view.state = .active
+    let edge = cornerRadius * 2 + 1
+    let mask = NSImage(size: CGSize(width: edge, height: edge), flipped: false) { rect in
+        NSColor.black.set()
+        NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius).fill()
+        return true
+    }
+    mask.capInsets = NSEdgeInsets(top: cornerRadius, left: cornerRadius, bottom: cornerRadius, right: cornerRadius)
+    mask.resizingMode = .stretch
+    view.maskImage = mask
+    return view
 }

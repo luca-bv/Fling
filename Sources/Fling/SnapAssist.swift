@@ -46,6 +46,7 @@ final class SnapAssist {
         panel.contentView = content(for: candidates, size: size, title: "Fill the space \(side)")
         panel.setFrame(flip(panelFrame, primaryHeight: primary.frame.height), display: true)
         panel.orderFrontRegardless()
+        panel.invalidateShadow() // the content and size change with every offer
     }
 
     func hide() {
@@ -103,11 +104,8 @@ final class SnapAssist {
     }
 
     private func content(for windows: [Window], size: CGSize, title: String) -> NSView {
-        let background = NSVisualEffectView(frame: CGRect(origin: .zero, size: size))
-        background.material = .popover
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 12
+        let background = roundedMaterial(.popover, cornerRadius: 12)
+        background.frame = CGRect(origin: .zero, size: size)
         // Layer colors don't follow appearance changes on their own; resolve them for the current one.
         var keycapBorder = CGColor.clear
         panel.effectiveAppearance.performAsCurrentDrawingAppearance {
