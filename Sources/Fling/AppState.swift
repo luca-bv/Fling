@@ -174,7 +174,10 @@ final class AppState {
         case .floatOnTop:
             return floating?.toggle(window) ?? ()
         case .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown:
-            guard let frame = window.frame else { return }
+            guard let frame = window.frame else {
+                log(action.title, window: window, problem: Self.unreadableFrame)
+                return NSSound.beep()
+            }
             let current = Action.allCases.filter { $0.category == .halves || $0.category == .corners || $0 == .maximize }
                 .first { target(for: $0, window: window, frame: frame)?.isClose(to: frame) == true }
             return perform(winArrowAction(action, from: current) ?? .restore, on: window, screen: screen)
@@ -188,14 +191,18 @@ final class AppState {
         }
         if window.performControl(action) { return }
         guard let frame = window.frame else {
-            log(action.title, window: window, problem: "Couldn't read the window's frame; the app may not support Accessibility")
+            log(action.title, window: window, problem: Self.unreadableFrame)
             return NSSound.beep()
         }
 
         // Repeating a half action on a window that hasn't moved since cycles its size.
         let cycles = action.category == .halves && UserDefaults.standard.bool(forKey: Prefs.cycleHalves)
         let count = cycles ? repeatCount(action.rawValue, window, frame) : 0
-        guard let target = target(for: action, window: window, frame: frame, screen: screen, repeatCount: count) else { return }
+        guard let target = target(for: action, window: window, frame: frame, screen: screen, repeatCount: count) else {
+            // No beep: double-clicking a title bar or Win Arrow Down restores windows Fling never moved.
+            return log(action.title, window: window,
+                       problem: action == .restore ? "Nothing to restore: Fling hasn't moved this window" : "No display found")
+        }
 
         if action == .restore { restoreFrames[window.element] = nil }
         place(window, from: frame, to: target, key: action.rawValue, count: count, rememberRestore: action != .restore)
@@ -213,11 +220,20 @@ final class AppState {
     }
 
     func perform(custom id: UUID, on given: Window? = nil) {
-        guard let custom = customActions.first(where: { $0.id == id }),
-              let window = given ?? Window.focused(), let frame = window.frame else { return NSSound.beep() }
+        guard let custom = customActions.first(where: { $0.id == id }) else { return NSSound.beep() }
+        guard let window = given ?? Window.focused() else {
+            log(custom.name, problem: "No focused window to act on")
+            return NSSound.beep()
+        }
+        guard let frame = window.frame else {
+            log(custom.name, window: window, problem: Self.unreadableFrame)
+            return NSSound.beep()
+        }
         // Repeating the shortcut steps through the entry's extra frames.
         let count = repeatCount(id.uuidString, window, frame)
-        guard let target = customFrame(custom, window: window, frame: frame, repeatCount: count) else { return }
+        guard let target = customFrame(custom, window: window, frame: frame, repeatCount: count) else {
+            return log(custom.name, window: window, problem: "No display found")
+        }
         place(window, from: frame, to: target, key: id.uuidString, count: count)
         lastPlacement[window.element] = nil
     }
@@ -329,7 +345,9 @@ final class AppState {
 
     /// Places a window at an exact frame, remembering the old one for Restore (used by the keyboard grid).
     func place(_ window: Window, at target: CGRect, key: String) {
-        guard let frame = window.frame else { return }
+        guard let frame = window.frame else {
+            return log(Action(rawValue: key)?.title ?? titleCase(key), window: window, problem: Self.unreadableFrame)
+        }
         place(window, from: frame, to: target, key: key, count: 0)
         lastPlacement[window.element] = nil
     }
@@ -353,6 +371,8 @@ final class AppState {
                                            requested: requested, actual: actual, problem: problem))
         if diagnostics.count > 100 { diagnostics.removeFirst(diagnostics.count - 100) }
     }
+
+    private static let unreadableFrame = "Couldn't read the window's frame; the app may not support Accessibility"
 
     private func describe(_ error: AXError) -> String {
         switch error {

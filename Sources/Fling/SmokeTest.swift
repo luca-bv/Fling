@@ -227,6 +227,10 @@ enum SmokeTest {
         try? await Task.sleep(for: .milliseconds(300))
         expect("flingctl frame sets an exact frame", framed.status == 0
             && window.frame?.isClose(to: CGRect(x: 120, y: 140, width: 500, height: 360)) == true)
+        _ = await flingctl(["restore", "--app", bundleID])
+        let nothingToRestore = await flingctl(["restore", "--app", bundleID])
+        expect("flingctl fails when an action does nothing (exit \(nothingToRestore.status))",
+               nothingToRestore.status == 1 && nothingToRestore.output.contains("Nothing to restore"))
         let windows = await flingctl(["windows"])
         expect("flingctl windows lists the test window", windows.status == 0 && windows.output.contains("Fling Smoke Test"))
         let displays = await flingctl(["displays", "--json"])

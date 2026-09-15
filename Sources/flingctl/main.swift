@@ -1,5 +1,5 @@
 // flingctl: sends its arguments to the running Fling over a Unix socket and prints the reply.
-// All commands are parsed and run inside Fling (see Sources/Fling/CommandLine.swift); run `flingctl help`.
+// All commands are parsed and run inside Fling (see Sources/Fling/CommandLineInterface.swift); run `flingctl help`.
 import Foundation
 
 // Must match CommandServer.socketPath in the app.
