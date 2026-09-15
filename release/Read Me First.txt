@@ -1,0 +1,38 @@
+Fling (beta)
+============
+
+A menu bar window manager for macOS 14 or later, on Apple Silicon or Intel Macs.
+
+INSTALL
+1. Drag Fling into the Applications folder in this window.
+2. Open Fling from Applications. It lives in the menu bar; it has no Dock icon.
+
+   This beta isn't notarized by Apple, so macOS will stop it the first time:
+   - macOS 15 or later: click "Done" on the warning, then open System Settings →
+     Privacy & Security, scroll down to "Fling was blocked…", click "Open Anyway",
+     and confirm.
+   - macOS 14: right-click Fling in Applications, choose Open, then Open again.
+   Or, in Terminal:  xattr -dr com.apple.quarantine /Applications/Fling.app
+
+3. When asked, allow Fling in System Settings → Privacy & Security → Accessibility.
+   Fling needs this to move other apps' windows. You can grant it once: updates signed
+   the same way keep the permission.
+   (Float on Top, ⌃⌥⌘P, also needs Screen & System Audio Recording. Nothing else does.)
+
+GETTING STARTED
+- ⌃⌥ ← → ↑ ↓ snap to halves; ⌃⌥ ↩ maximizes; ⌃⌥ ⌫ restores. Every action is in the
+  menu bar menu, and Settings (⌘, from that menu) lists and changes all shortcuts.
+- Hold ⌃⌘ over any window and move the cursor to throw it into place.
+- If Rectangle or Rectangle Pro is running, quit it first: they share shortcuts.
+
+COMMAND LINE (optional)
+  ln -s /Applications/Fling.app/Contents/MacOS/flingctl /usr/local/bin/flingctl
+  flingctl help
+
+FEEDBACK
+If a window doesn't move as expected, open Settings → Diagnostics, click Copy Report,
+and send it along with what you did.
+
+UNINSTALL
+Quit Fling from its menu, delete it from Applications, and remove it from
+Privacy & Security → Accessibility.

@@ -36,6 +36,18 @@ On first launch macOS asks for **Accessibility** access (System Settings → Pri
 
 If you also run Rectangle, quit it first. It uses the same default shortcuts.
 
+## Releases
+
+```sh
+make dmg VERSION=0.2.0   # → build/Fling-0.2.0.dmg
+```
+
+The disk image holds a universal app (Apple Silicon and Intel) signed with the "Fling Dev" certificate, an Applications shortcut, and `Read Me First.txt` with install steps for testers.
+
+- **Not notarized.** On testers' Macs, Gatekeeper blocks the first launch. They allow it once in System Settings → Privacy & Security → **Open Anyway** (steps are in the read-me). Notarization needs an Apple Developer ID ($99/year).
+- **Always sign releases with the same certificate.** macOS ties the Accessibility grant to it, so testers keep their permission across updates. `make dmg` refuses to build ad-hoc. Back up the certificate: in Keychain Access, export "Fling Dev" (certificate and private key) as a .p12. A new certificate means every tester re-grants Accessibility.
+- Bump `VERSION` for each release. The build number is the commit count.
+
 ## Shortcuts
 
 Four layers, all built on ⌃⌥ and clear of macOS's own shortcuts. Rectangle's keys are unchanged, so switching from Rectangle or Rectangle Pro needs no relearning.
