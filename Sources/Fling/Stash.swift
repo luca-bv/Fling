@@ -14,7 +14,6 @@ final class Stash {
         let screen: CGRect
         /// Optional colored tab on the screen edge; hovering it reveals only this window.
         var tab: (overlay: Overlay, frame: CGRect)?
-        var tabColor: NSColor?
         var revealed = false
         /// Shown by Toggle or Cycle rather than by hovering, so moving the cursor away doesn't tuck it back.
         var held = false
@@ -43,7 +42,6 @@ final class Stash {
         if UserDefaults.standard.bool(forKey: Prefs.stashColorTabs) {
             let tabFrame = tabFrame(for: entry)
             entry.tab = (Overlay(cornerRadius: 3, alpha: 0.9, color: tabColor ?? Self.randomColor()), tabFrame)
-            entry.tabColor = tabColor ?? entry.tab?.overlay.color
             entry.tab?.overlay.show(tabFrame)
         }
         window.setFrame(entry.hidden)
@@ -57,7 +55,7 @@ final class Stash {
                 forget(entry.window)
                 continue
             }
-            stash(entry.window, to: entry.edge, tabColor: entry.tabColor)
+            stash(entry.window, to: entry.edge, tabColor: entry.tab?.overlay.color)
         }
     }
 

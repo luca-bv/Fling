@@ -101,6 +101,18 @@ final class Gestures {
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return false }
             return state.keyboardGrid?.handleKey(Int(event.getIntegerValueField(.keyboardEventKeycode))) != true
         case .leftMouseDown, .keyDown:
+            if let assist = state.snapAssist, assist.isShowing {
+                let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)).intersection(Prefs.modifierMask)
+                let used = type == .keyDown
+                    ? assist.handleKey(Int(event.getIntegerValueField(.keyboardEventKeycode)), modifiers: flags)
+                    : assist.handleClick(at: p)
+                if used { return false }
+            }
+            if type == .keyDown, !state.capturingKeys,
+               Hotkeys.handleKeyDown(keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode)), flags: UInt(event.flags.rawValue),
+                                     isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0) {
+                return false
+            }
             state.keyboardGrid?.hide()
             // A click or a shortcut using the same modifiers means the user isn't throwing.
             quick = nil
@@ -181,8 +193,9 @@ final class Gestures {
         if let cursorScreen = screens.firstIndex(where: { $0.frame.contains(p) }), cursorScreen != windowScreen {
             t.target = (.center, cursorScreen) // thrown onto another display
         } else {
+            let portrait = screens.indices.contains(windowScreen) && screens[windowScreen].frame.height > screens[windowScreen].frame.width
             let setting = { (sector: Int, long: Bool) in
-                UserDefaults.standard.string(forKey: ThrowSectors.prefKey(sector: sector, long: long)) ?? "none"
+                UserDefaults.standard.string(forKey: ThrowSectors.prefKey(sector: sector, long: long, portrait: portrait)) ?? "none"
             }
             t.target = throwAction(dx: dx, dy: dy, long: distance >= CGFloat(UserDefaults.standard.integer(forKey: Prefs.throwLongDistance)), setting: setting).map { ($0, windowScreen) }
         }
@@ -305,7 +318,8 @@ final class Gestures {
         let panelAction = snapPanel.action(at: p)
         let previousPreview = footprintFrame
         var preview: CGRect?
-        let areaSetting = { (area: SnapArea) in defaults.string(forKey: area.prefKey) ?? area.defaultSetting }
+        let portrait = screen.map { screens[$0].frame.height > screens[$0].frame.width } ?? false
+        let areaSetting = { (area: SnapArea) in defaults.string(forKey: area.prefKey(portrait: portrait)) ?? area.defaultSetting }
         if edges, let screen, let action = snapAction(at: p, in: screens[screen].frame, setting: areaSetting) {
             d.snap = .action(action, screen: screen)
             preview = state.target(for: action, window: window, frame: d.start, screen: screen)
@@ -326,6 +340,7 @@ final class Gestures {
     }
 
     private func dropped() {
+        if drag?.moving == true || drag?.resizing == true { state.displayMemory?.windowsChanged() }
         if let d = drag, d.resizing, let window = d.window, let new = window.frame,
            UserDefaults.standard.bool(forKey: Prefs.resizeAdjacent) {
             let others = Window.visible().filter { $0.element != window.element }

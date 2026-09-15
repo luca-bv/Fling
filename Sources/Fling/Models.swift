@@ -167,27 +167,17 @@ struct LayoutEntry: Codable, Hashable, Identifiable {
     }
 }
 
-/// `fling://execute-action?name=left-half`, `fling://execute-custom?name=…`, `fling://execute-layout?name=…`
-enum URLCommand: Equatable {
-    case action(Action), custom(String), layout(String)
-
-    init?(_ url: URL) {
-        guard url.scheme == "fling",
-              let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "name" })?.value
-        else { return nil }
-        switch url.host {
-        case "execute-action":
-            guard let action = Action.allCases.first(where: { $0.urlName == name }) else { return nil }
-            self = .action(action)
-        case "execute-custom": self = .custom(name)
-        case "execute-layout": self = .layout(name)
-        default: return nil
-        }
-    }
-
-    init?(string: String) {
-        guard let url = URL(string: string) else { return nil }
-        self.init(url)
+/// `fling://` URLs as flingctl arguments, so both share one parser: `execute-action?name=left-half` → `["left-half"]`,
+/// `execute-custom?name=…` and `execute-layout?name=…` → `["custom" | "layout", name]`, `save-layout[?name=…]`.
+func commandArguments(for url: URL) -> [String]? {
+    guard url.scheme == "fling" else { return nil }
+    let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "name" }?.value
+    switch (url.host, name) {
+    case ("save-layout", _): return ["save-layout"] + (name.map { [$0] } ?? [])
+    case ("execute-action", let name?) where Action.allCases.contains(where: { $0.urlName == name }): return [name]
+    case ("execute-custom", let name?): return ["custom", name]
+    case ("execute-layout", let name?): return ["layout", name]
+    default: return nil
     }
 }
 
@@ -205,6 +195,60 @@ func clamp(_ f: CGRect, into area: CGRect) -> CGRect {
     r.size.width = min(r.width, area.width)
     r.origin.x = min(max(r.minX, area.minX), area.maxX - r.width)
     return r
+}
+
+/// Saved window positions for each display configuration (see DisplayMemory).
+struct DisplayMemoryStore: Codable, Equatable {
+    struct Record: Codable, Equatable {
+        var title: String
+        var frame: CGRect
+    }
+
+    struct Configuration: Codable, Equatable {
+        var updated = Date()
+        /// Windows by app bundle ID.
+        var apps: [String: [Record]] = [:]
+    }
+
+    static let maxConfigurations = 20
+    var configurations: [String: Configuration] = [:]
+
+    /// Identifies a display setup: which displays, where, at what size (so a resolution change is a new setup).
+    static func key(for screens: [Screen]) -> String {
+        screens.sorted { $0.id < $1.id }
+            .map { "\($0.id)@\(Int($0.frame.minX)),\(Int($0.frame.minY)),\(Int($0.frame.width))x\(Int($0.frame.height))" }
+            .joined(separator: "|")
+    }
+
+    /// Replaces the records of the apps seen now; apps not seen (closed, hidden, on another Space) keep theirs.
+    /// ponytail: per app, not per Space; an app's windows on another Space are forgotten once it's seen here.
+    mutating func record(_ apps: [String: [Record]], for key: String) {
+        var configuration = configurations[key] ?? Configuration()
+        configuration.apps.merge(apps) { _, new in new }
+        configuration.updated = Date()
+        configurations[key] = configuration
+        if configurations.count > Self.maxConfigurations,
+           let oldest = configurations.min(by: { $0.value.updated < $1.value.updated })?.key {
+            configurations[oldest] = nil
+        }
+    }
+
+    /// Matches an app's current windows to its records by title (exact titles first, then whatever's left).
+    static func placements(records: [Record], titles: [String]) -> [(window: Int, frame: CGRect)] {
+        LayoutEntry.match(entries(records), titles: titles).map { ($0.window, records[$0.entry].frame) }
+    }
+
+    /// Where a newly opened window should go: its title's record if no open window already claims it,
+    /// otherwise the first unclaimed record.
+    static func placement(forNewWindow title: String, otherTitles: [String], records: [Record]) -> CGRect? {
+        let claimed = Set(LayoutEntry.match(entries(records), titles: otherTitles).map(\.entry))
+        let free = records.indices.filter { !claimed.contains($0) }
+        return (free.first { records[$0].title == title } ?? free.first).map { records[$0].frame }
+    }
+
+    private static func entries(_ records: [Record]) -> [LayoutEntry] {
+        records.map { LayoutEntry(bundleID: "", appName: "", titleMatch: .loose, title: $0.title) }
+    }
 }
 
 /// JSON values in UserDefaults.

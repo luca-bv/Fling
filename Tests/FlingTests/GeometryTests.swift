@@ -135,3 +135,17 @@ private let window = CGRect(x: 100, y: 100, width: 400, height: 300)
     #expect(KeyGrid.frame(from: v, to: v, in: screen).isClose(to: CGRect(x: 900, y: 558.33, width: 300, height: 266.67), tolerance: 0.01))
     #expect(KeyGrid.frame(from: q, to: v, in: screen, gap: 20) == screen.insetBy(dx: 20, dy: 20))
 }
+
+@Test func snapAssistSpace() {
+    let left = Action.leftHalf.frame(for: window, in: screen)
+    #expect(snapAssistArea(placed: left, in: screen) == Action.rightHalf.frame(for: window, in: screen))
+    // A corner leaves a tie between the side and the bottom; the side wins.
+    #expect(snapAssistArea(placed: Action.topLeft.frame(for: window, in: screen), in: screen) == CGRect(x: 600, y: 25, width: 600, height: 800))
+    // Two-thirds leaves a third; maximize leaves nothing; a sliver isn't worth offering.
+    #expect(snapAssistArea(placed: Action.firstTwoThirds.frame(for: window, in: screen), in: screen) == Action.lastThird.frame(for: window, in: screen))
+    #expect(snapAssistArea(placed: screen, in: screen) == nil)
+    #expect(snapAssistArea(placed: CGRect(x: 0, y: 25, width: 1100, height: 800), in: screen) == nil)
+    // With gaps, the space matches what Right Half would give.
+    #expect(snapAssistArea(placed: Action.leftHalf.frame(for: window, in: screen, gap: 20), in: screen, gap: 20)
+        == Action.rightHalf.frame(for: window, in: screen, gap: 20))
+}

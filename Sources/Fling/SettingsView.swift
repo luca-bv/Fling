@@ -19,11 +19,14 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @State private var trusted = AXIsProcessTrusted()
+    @State private var canRecordScreen = CGPreflightScreenCaptureAccess()
+    @AppStorage(Prefs.floatOpacity) private var floatOpacity = 1.0
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage(Prefs.gap) private var gap = 0
     @AppStorage(Prefs.cycleHalves) private var cycleHalves = true
     @AppStorage(Prefs.doubleClickTitleBar) private var doubleClickTitleBar = false
     @AppStorage(Prefs.moveCursorWithWindow) private var moveCursorWithWindow = false
+    @AppStorage(Prefs.snapAssist) private var snapAssist = true
     @AppStorage(Prefs.adjustForDock) private var adjustForDock = false
     @AppStorage(Prefs.showMenuBarIcon) private var showMenuBarIcon = true
     @AppStorage(Prefs.pinEnabled) private var pinEnabled = false
@@ -31,10 +34,12 @@ private struct GeneralSettings: View {
     @AppStorage(Prefs.pinWidth) private var pinWidth = "1/4"
     @AppStorage(Prefs.pinRight) private var pinRight = true
     @AppStorage(Prefs.iCloudSync) private var iCloudSync = false
+    @AppStorage(Prefs.configFile) private var configFile = false
     @AppStorage(Prefs.stashColorTabs) private var stashColorTabs = false
     @AppStorage(Prefs.stashRevealDelay) private var stashRevealDelay = "0"
     @AppStorage(Prefs.stashRevealWithCommand) private var stashRevealWithCommand = false
-    @AppStorage(Prefs.restoreDisplayLayouts) private var restoreDisplayLayouts = false
+    @AppStorage(Prefs.displayMemory) private var displayMemory = true
+    @AppStorage(Prefs.displayMemoryNewWindows) private var displayMemoryNewWindows = true
     @State private var importFailed = false
     @Environment(AppState.self) private var state
 
@@ -72,14 +77,28 @@ private struct GeneralSettings: View {
                         }
                     }
                 }
+                LabeledContent("Screen Recording (only for Float on Top)") {
+                    if canRecordScreen {
+                        Label("Granted", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Button("Open System Settings…") {
+                            CGRequestScreenCaptureAccess()
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                        }
+                    }
+                }
             }
             Section {
                 Stepper("Gaps between windows: \(gap) px", value: $gap, in: 0...60, step: 2)
                 Toggle("Repeating a half action cycles ½ → ⅔ → ⅓", isOn: $cycleHalves)
+                Toggle("Snap Assist: after snapping, pick a window to fill the rest", isOn: $snapAssist)
                 Toggle("Double-click a title bar to maximize or restore", isOn: $doubleClickTitleBar)
                 Toggle("Move the cursor with a window sent to another display", isOn: $moveCursorWithWindow)
                 Toggle("Adjust windows when the Dock is shown, hidden or moved", isOn: $adjustForDock)
-                Toggle("Put windows back when a display is reconnected", isOn: $restoreDisplayLayouts)
+                LabeledContent("Floating window opacity") {
+                    Slider(value: $floatOpacity, in: 0.3...1)
+                        .frame(width: 180)
+                }
             } header: {
                 Text("Windows")
             } footer: {
@@ -111,6 +130,17 @@ private struct GeneralSettings: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Remember window positions for each display setup", isOn: $displayMemory)
+                Toggle("Put reopened apps' windows back where they were", isOn: $displayMemoryNewWindows)
+                    .disabled(!displayMemory)
+                Button("Forget Remembered Positions") { state.displayMemory?.forgetAll() }
+            } header: {
+                Text("Display Memory")
+            } footer: {
+                Text("When you plug in or unplug a display, change the arrangement, or wake the Mac, windows return to where they were the last time that setup was in use. Layouts triggered by the same change still apply afterwards.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Show a color tab for each stashed window", isOn: $stashColorTabs)
                 Picker("Show a stashed window", selection: $stashRevealDelay) {
                     Text("Immediately").tag("0")
@@ -128,14 +158,19 @@ private struct GeneralSettings: View {
             Section {
                 Toggle("Sync configuration over iCloud Drive", isOn: $iCloudSync)
                     .onChange(of: iCloudSync) { _, on in if on { state.cloudSync?.enabledChanged() } }
+                Toggle("Keep configuration in ~/.config/fling/config.json", isOn: $configFile)
+                    .onChange(of: configFile) { _, on in if on { state.configFile?.enabledChanged() } }
                 HStack {
                     Button("Export…") { exportConfig() }
                     Button("Import…") { importConfig() }
+                    if configFile {
+                        Button("Show Config File") { NSWorkspace.shared.activateFileViewerSelecting([ConfigFileSync.dotfileURL]) }
+                    }
                 }
             } header: {
                 Text("Configuration")
             } footer: {
-                Text("Shortcuts, custom positions, layouts and settings, as JSON. Sync keeps a copy in iCloud Drive → Fling.")
+                Text("Shortcuts, custom positions, layouts and settings, as JSON. Sync keeps a copy in iCloud Drive → Fling. The config file is written when anything changes and reloaded within seconds when you edit it, so it can live in a dotfiles repo.")
                     .foregroundStyle(.secondary)
             }
             .alert("That file isn't a Fling configuration.", isPresented: $importFailed) {}
@@ -158,6 +193,7 @@ private struct GeneralSettings: View {
             // Permission can be granted while this tab is open; keep the status live.
             while !Task.isCancelled {
                 trusted = AXIsProcessTrusted()
+                canRecordScreen = CGPreflightScreenCaptureAccess()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -166,6 +202,7 @@ private struct GeneralSettings: View {
 
 private struct ShortcutSettings: View {
     @Environment(AppState.self) private var state
+    @AppStorage(Prefs.recordModifierSides) private var recordModifierSides = false
 
     var body: some View {
         Form {
@@ -179,9 +216,10 @@ private struct ShortcutSettings: View {
                 }
             }
             Section {
+                Toggle("Record left/right-specific modifiers (e.g. right ⌘ only)", isOn: $recordModifierSides)
                 Button("Restore Default Shortcuts") { state.shortcuts = Action.defaultShortcuts }
             } footer: {
-                Text("Assigning keys already used by another action moves them to the new one.")
+                Text("Assigning keys already used by another action moves them to the new one. ‹⌘ means left ⌘, ⌘› right ⌘.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -194,6 +232,8 @@ private struct MouseSettings: View {
     @AppStorage(Prefs.snapPanel) private var snapPanel = false
     @AppStorage(Prefs.snapHaptics) private var snapHaptics = true
     @AppStorage(Prefs.resizeAdjacent) private var resizeAdjacent = false
+    /// Which displays the snap area and throw pickers below configure.
+    @State private var portrait = false
     @AppStorage(Prefs.contextClickModifiers) private var contextClickModifiers = 0
     @AppStorage(Prefs.windowThrow) private var windowThrow = true
     @AppStorage(Prefs.throwModifiers) private var throwModifiers = 0
@@ -215,9 +255,11 @@ private struct MouseSettings: View {
                 Toggle("Show the Snap Panel while dragging", isOn: $snapPanel)
                 Toggle("Haptic feedback when a snap area appears", isOn: $snapHaptics)
                 DisclosureGroup("Snap areas") {
+                    orientationPicker
                     ForEach(SnapArea.allCases, id: \.self) { area in
                         PositionPicker(title: titleCase(area.rawValue) + ([.left, .right, .top, .bottom].contains(area) ? " edge" : " corner"),
-                                       key: area.prefKey, extra: area == .bottom ? [("thirds", "Thirds (by cursor position)")] : [])
+                                       key: area.prefKey(portrait: portrait), extra: area == .bottom ? [("thirds", "Thirds (by cursor position)")] : [])
+                            .id("\(area)\(portrait)")
                     }
                 }
                 Toggle("Resize neighboring windows when dragging a shared edge", isOn: $resizeAdjacent)
@@ -247,10 +289,13 @@ private struct MouseSettings: View {
                 Stepper("Long throw from: \(throwLongDistance) pt", value: $throwLongDistance, in: 60...400, step: 10)
                     .disabled(!windowThrow)
                 DisclosureGroup("Throw positions") {
+                    orientationPicker
                     ForEach([false, true], id: \.self) { long in
                         Text(long ? "Long throw (move farther)" : "Short throw").font(.headline)
                         ForEach(0..<8, id: \.self) { sector in
-                            PositionPicker(title: ThrowSectors.names[sector], key: ThrowSectors.prefKey(sector: sector, long: long))
+                            PositionPicker(title: ThrowSectors.names[sector],
+                                           key: ThrowSectors.prefKey(sector: sector, long: long, portrait: portrait))
+                                .id("\(sector)\(long)\(portrait)")
                         }
                     }
                 }
@@ -280,6 +325,14 @@ private struct MouseSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var orientationPicker: some View {
+        Picker("Displays", selection: $portrait) {
+            Text("Landscape").tag(false)
+            Text("Portrait").tag(true)
+        }
+        .pickerStyle(.segmented)
     }
 
     private func note(_ text: String) -> some View {
@@ -357,7 +410,9 @@ struct ShortcutRecorder: View {
             } else if flags.isEmpty {
                 NSSound.beep() // global shortcuts need at least one modifier
             } else {
-                shortcut = Shortcut(Int(event.keyCode), event.characters(byApplyingModifiers: []) ?? "", flags)
+                let sides = UserDefaults.standard.bool(forKey: Prefs.recordModifierSides)
+                    ? UInt(event.modifierFlags.rawValue) & ModifierSides.all : nil
+                shortcut = Shortcut(Int(event.keyCode), event.characters(byApplyingModifiers: []) ?? "", flags, sides: sides)
                 stop()
             }
             return nil

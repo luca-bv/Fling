@@ -3,3 +3,4 @@
 import Foundation
 
 func jsonData(_ text: String) -> Data { Data(text.utf8) }
+func url(_ text: String) -> URL { URL(string: text)! }

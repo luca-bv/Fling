@@ -42,49 +42,61 @@ struct Config: Codable, Equatable {
     }
 }
 
-/// Keeps the config in iCloud Drive (~/Library/Mobile Documents/com~apple~CloudDocs/Fling/config.json).
+/// Keeps the config in a JSON file, both ways: changes in Fling are written out, and edits to the file
+/// (from another Mac via iCloud Drive, or by hand in a dotfiles repo) are loaded back in.
 /// A plain file needs no iCloud entitlement, so this works for self-signed builds too.
 @MainActor
-final class CloudSync {
-    static let url = FileManager.default.homeDirectoryForCurrentUser
+final class ConfigFileSync {
+    static let iCloudURL = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/Mobile Documents/com~apple~CloudDocs/Fling/config.json")
+    static let dotfileURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/fling/config.json")
 
+    let url: URL
     private unowned let state: AppState
+    private let enabledKey: String
     private var pendingWrite: Task<Void, Never>?
     private var timer: Timer?
 
-    private var enabled: Bool { UserDefaults.standard.bool(forKey: Prefs.iCloudSync) }
-    /// Modification date of the file we last wrote or read; anything newer came from another Mac.
+    private var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+    /// Modification date of the file as last written or read; anything newer was changed elsewhere.
     private var lastSynced: Date {
-        get { UserDefaults.standard.object(forKey: "iCloudSyncedAt") as? Date ?? .distantPast }
-        set { UserDefaults.standard.set(newValue, forKey: "iCloudSyncedAt") }
+        get { UserDefaults.standard.object(forKey: enabledKey + "SyncedAt") as? Date ?? .distantPast }
+        set { UserDefaults.standard.set(newValue, forKey: enabledKey + "SyncedAt") }
     }
 
-    init(state: AppState) {
+    /// ponytail: polls the file's modification date; an NSFilePresenter would react instantly.
+    init(state: AppState, url: URL, enabledKey: String, pollInterval: TimeInterval) {
         self.state = state
+        self.url = url
+        self.enabledKey = enabledKey
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleWrite() }
         }
-        // ponytail: polls every 30 s; an NSFilePresenter would react instantly.
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pull() }
         }
         pull()
     }
 
-    /// Call when the setting is switched on: take a newer copy from iCloud, otherwise upload this Mac's.
+    /// Call when the setting is switched on: load the file if it's newer, otherwise write this Mac's config.
     func enabledChanged() {
         pull()
         scheduleWrite()
     }
 
+    private var modified: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    /// Changed on disk since Fling last wrote or read it.
+    private var changedElsewhere: Bool {
+        modified.map { $0 > lastSynced.addingTimeInterval(1) } ?? false
+    }
+
     private func pull() {
-        guard enabled,
-              let modified = (try? FileManager.default.attributesOfItem(atPath: Self.url.path))?[.modificationDate] as? Date,
-              modified > lastSynced.addingTimeInterval(1),
-              let data = try? Data(contentsOf: Self.url) else { return }
+        guard enabled, changedElsewhere, let modified, let data = try? Data(contentsOf: url) else { return }
         lastSynced = modified
-        if !state.importConfig(data) { NSLog("Fling: couldn't read iCloud config") }
+        if !state.importConfig(data) { NSLog("Fling: couldn't read the config at \(url.path); keeping the current settings") }
     }
 
     private func scheduleWrite() {
@@ -92,12 +104,13 @@ final class CloudSync {
         pendingWrite?.cancel()
         pendingWrite = Task {
             try? await Task.sleep(for: .seconds(2)) // coalesce bursts of changes
-            guard !Task.isCancelled, let data = state.exportConfig(), (try? Data(contentsOf: Self.url)) != data else { return }
-            try? FileManager.default.createDirectory(at: Self.url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: Self.url, options: .atomic)
-            if let modified = (try? FileManager.default.attributesOfItem(atPath: Self.url.path))?[.modificationDate] as? Date {
-                lastSynced = modified
-            }
+            guard !Task.isCancelled else { return }
+            // An edit made to the file since (by hand or on another Mac) wins over writing ours out.
+            if changedElsewhere { return pull() }
+            guard let data = state.exportConfig(), (try? Data(contentsOf: url)) != data else { return }
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: url, options: .atomic)
+            if let modified { lastSynced = modified }
         }
     }
 }

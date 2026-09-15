@@ -13,7 +13,7 @@ enum Action: String, CaseIterable, Codable {
     case fillLeft, fillRight
     case larger, smaller, moveLeft, moveRight, moveUp, moveDown, nudgeLeft, nudgeRight, nudgeUp, nudgeDown
     case nextDisplay, previousDisplay, nextSpace, previousSpace
-    case restore, minimize, fullScreen, close, hideApp, quitApp, showMenu, keyboardGrid
+    case restore, minimize, fullScreen, close, hideApp, quitApp, showMenu, keyboardGrid, floatOnTop, unfloatAll
     case stashLeft, stashRight, stashAll, stashAllExceptFront, toggleStashed, cycleStashed, unstashAll
     case togglePin, reflowPin
     case tile2x2, tile2x3, cascadeAll, cascadeApp, appLeftHalf, appRightHalf
@@ -60,7 +60,7 @@ enum Action: String, CaseIterable, Codable {
         case .fillLeft, .fillRight: .fill
         case .larger, .smaller, .moveLeft, .moveRight, .moveUp, .moveDown, .nudgeLeft, .nudgeRight, .nudgeUp, .nudgeDown: .sizeAndMove
         case .nextDisplay, .previousDisplay, .nextSpace, .previousSpace: .display
-        case .restore, .minimize, .fullScreen, .close, .hideApp, .quitApp, .showMenu, .keyboardGrid: .window
+        case .restore, .minimize, .fullScreen, .close, .hideApp, .quitApp, .showMenu, .keyboardGrid, .floatOnTop, .unfloatAll: .window
         case .stashLeft, .stashRight, .stashAll, .stashAllExceptFront, .toggleStashed, .cycleStashed, .unstashAll: .stash
         case .togglePin, .reflowPin: .pin
         case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf: .multiple
@@ -144,13 +144,31 @@ enum Action: String, CaseIterable, Codable {
             let shrunk = w.insetBy(dx: Self.sizeStep, dy: Self.sizeStep)
             return shrunk.width < s.width / 4 || shrunk.height < s.height / 4 ? w : shrunk
         case .nextDisplay, .previousDisplay, .nextSpace, .previousSpace, .restore, .minimize, .fullScreen, .close,
-             .hideApp, .quitApp, .showMenu, .keyboardGrid, .stashLeft, .stashRight, .stashAll, .stashAllExceptFront,
+             .hideApp, .quitApp, .showMenu, .keyboardGrid, .floatOnTop, .unfloatAll, .stashLeft, .stashRight, .stashAll, .stashAllExceptFront,
              .toggleStashed, .cycleStashed, .unstashAll, .togglePin, .reflowPin,
              .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown,
              .fillLeft, .fillRight, .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf:
             return w // these need other windows; AppState handles them
         }
     }
+}
+
+/// Snap Assist: the biggest empty strip beside a snapped window (left, right, above or below; ties favor
+/// left/right), or nil if it's under 15% of the screen. With gaps, the strip keeps a full gap on every side.
+func snapAssistArea(placed f: CGRect, in s: CGRect, gap: CGFloat = 0) -> CGRect? {
+    let area = s.insetBy(dx: gap / 2, dy: gap / 2), placed = f.insetBy(dx: -gap / 2, dy: -gap / 2)
+    let strips = [
+        CGRect(x: area.minX, y: area.minY, width: placed.minX - area.minX, height: area.height),
+        CGRect(x: placed.maxX, y: area.minY, width: area.maxX - placed.maxX, height: area.height),
+        CGRect(x: area.minX, y: area.minY, width: area.width, height: placed.minY - area.minY),
+        CGRect(x: area.minX, y: placed.maxY, width: area.width, height: area.maxY - placed.maxY),
+    ]
+    var best: CGRect?
+    for strip in strips where strip.width > 1 && strip.height > 1 {
+        if strip.width * strip.height > (best.map { $0.width * $0.height } ?? 0) { best = strip }
+    }
+    guard let best, best.width * best.height >= area.width * area.height * 0.15 else { return nil }
+    return best.insetBy(dx: gap / 2, dy: gap / 2)
 }
 
 /// The keyboard grid's layout: keys sit where their cells do (Q W E R / A S D F / Z X C V).
@@ -223,7 +241,8 @@ enum SnapArea: String, CaseIterable {
         }
     }
 
-    var prefKey: String { "snapArea." + rawValue }
+    /// Portrait displays have their own settings.
+    func prefKey(portrait: Bool = false) -> String { (portrait ? "snapArea.portrait." : "snapArea.") + rawValue }
 }
 
 /// The snap area under the cursor, using the screen's full frame (menu bar included).
@@ -261,7 +280,9 @@ enum ThrowSectors {
     static let short: [Action] = [.rightHalf, .bottomRight, .bottomHalf, .bottomLeft, .leftHalf, .topLeft, .topHalf, .topRight]
     static let long: [Action] = [.lastTwoThirds, .bottomRight, .center, .bottomLeft, .firstTwoThirds, .topLeft, .maximize, .topRight]
 
-    static func prefKey(sector: Int, long: Bool) -> String { "throw\(long ? "Long" : "Short")\(sector)" }
+    static func prefKey(sector: Int, long: Bool, portrait: Bool = false) -> String {
+        "throw\(portrait ? "Portrait" : "")\(long ? "Long" : "Short")\(sector)"
+    }
 }
 
 /// Window Throw: the pie sector of the cursor offset picks the action; a long throw uses the outer ring.

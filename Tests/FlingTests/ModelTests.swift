@@ -42,12 +42,17 @@ private let window = CGRect(x: 100, y: 100, width: 400, height: 300)
     #expect(entry(.regex, "^In").matches(title: "Inbox"))
 }
 
-@Test func urlCommands() {
-    #expect(URLCommand(string: "fling://execute-action?name=left-half") == .action(.leftHalf))
-    #expect(URLCommand(string: "fling://execute-action?name=top-left-sixth") == .action(.topLeftSixth))
-    #expect(URLCommand(string: "fling://execute-layout?name=Work%20Setup") == .layout("Work Setup"))
-    #expect(URLCommand(string: "fling://execute-action?name=nope") == nil)
-    #expect(URLCommand(string: "other://execute-action?name=left-half") == nil)
+@Test func urlsBecomeCommands() {
+    #expect(commandArguments(for: url("fling://execute-action?name=top-left-sixth")) == ["top-left-sixth"])
+    #expect(commandArguments(for: url("fling://execute-layout?name=Work%20Setup")) == ["layout", "Work Setup"])
+    #expect(commandArguments(for: url("fling://execute-custom?name=Wide")) == ["custom", "Wide"])
+    #expect(commandArguments(for: url("fling://save-layout?name=Desk")) == ["save-layout", "Desk"])
+    #expect(commandArguments(for: url("fling://save-layout")) == ["save-layout"])
+    // Only real actions, so a URL can't run other commands (execute-action?name=windows).
+    #expect(commandArguments(for: url("fling://execute-action?name=windows")) == nil)
+    #expect(commandArguments(for: url("fling://execute-layout")) == nil)
+    #expect(commandArguments(for: url("other://execute-action?name=left-half")) == nil)
+    #expect(CLIRequest.parse(commandArguments(for: url("fling://execute-layout?name=Work%20Setup"))!) == .success(.layout("Work Setup")))
 }
 
 @Test func pinModeGeometry() {
@@ -98,4 +103,38 @@ private let window = CGRect(x: 100, y: 100, width: 400, height: 300)
     #expect(config?.customActions.first?.snapTarget == false)
     #expect(config?.layouts.first?.launchApps == true)
     #expect(config?.layouts.first?.allMatches == false)
+}
+
+@Test func displayMemory() {
+    let laptop = Screen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visible: screen, isPrimary: true, id: "B-LAPTOP")
+    let monitor = Screen(frame: CGRect(x: 1440, y: -300, width: 2560, height: 1440), visible: screen, isPrimary: false, id: "A-MONITOR")
+    // Order-independent, and a different arrangement or resolution is a different setup.
+    #expect(DisplayMemoryStore.key(for: [laptop, monitor]) == DisplayMemoryStore.key(for: [monitor, laptop]))
+    let moved = Screen(frame: CGRect(x: -2560, y: 0, width: 2560, height: 1440), visible: screen, isPrimary: false, id: "A-MONITOR")
+    #expect(DisplayMemoryStore.key(for: [laptop, monitor]) != DisplayMemoryStore.key(for: [laptop, moved]))
+
+    let inbox = DisplayMemoryStore.Record(title: "Inbox", frame: CGRect(x: 0, y: 25, width: 700, height: 800))
+    let draft = DisplayMemoryStore.Record(title: "Draft", frame: CGRect(x: 700, y: 25, width: 700, height: 800))
+    // Windows find their own titles first, whatever order they're listed in.
+    let placements = DisplayMemoryStore.placements(records: [inbox, draft], titles: ["Draft", "Inbox"])
+    #expect(Dictionary(uniqueKeysWithValues: placements.map { ($0.window, $0.frame) }) == [0: draft.frame, 1: inbox.frame])
+    // A reopened "Draft" window goes to Draft's spot; a new untitled one takes the spot no open window claims.
+    #expect(DisplayMemoryStore.placement(forNewWindow: "Draft", otherTitles: ["Inbox"], records: [inbox, draft]) == draft.frame)
+    #expect(DisplayMemoryStore.placement(forNewWindow: "Untitled", otherTitles: ["Inbox"], records: [inbox, draft]) == draft.frame)
+    #expect(DisplayMemoryStore.placement(forNewWindow: "Untitled", otherTitles: ["Inbox", "Draft"], records: [inbox, draft]) == nil)
+
+    // Recording keeps apps that weren't seen, and drops the least recently used setup past the limit.
+    var store = DisplayMemoryStore()
+    store.record(["mail": [inbox]], for: "one")
+    store.record(["notes": [draft]], for: "one")
+    #expect(store.configurations["one"]?.apps.keys.sorted() == ["mail", "notes"])
+    for i in 0..<DisplayMemoryStore.maxConfigurations { store.record(["mail": [inbox]], for: "setup \(i)") }
+    #expect(store.configurations.count == DisplayMemoryStore.maxConfigurations)
+    #expect(store.configurations["one"] == nil)
+}
+
+@Test func storedDataKeysDontCollideWithSettings() {
+    // A settings key that's also used for stored JSON gets overwritten by it (display memory once turned itself off).
+    let settings = Set(Prefs.snapshot().keys).union([Prefs.iCloudSync, Prefs.configFile])
+    #expect(settings.isDisjoint(with: ["shortcuts", "customActions", "layouts", "displayMemoryStore"]))
 }

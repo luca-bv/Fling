@@ -48,25 +48,27 @@ enum Prefs {
     static let moveCursorWithWindow = "moveCursorWithWindow", resizeAdjacent = "resizeAdjacent", adjustForDock = "adjustForDock"
     static let showMenuBarIcon = "showMenuBarIcon", contextClickModifiers = "contextClickModifiers"
     static let stashRevealDelay = "stashRevealDelay", stashRevealWithCommand = "stashRevealWithCommand"
-    static let restoreDisplayLayouts = "restoreDisplayLayouts", throwSafeArea = "throwSafeArea", throwLongDistance = "throwLongDistance"
+    static let displayMemory = "displayMemory", displayMemoryNewWindows = "displayMemoryNewWindows", snapAssist = "snapAssist"
+    static let recordModifierSides = "recordModifierSides", floatOpacity = "floatOpacity"
+    static let throwSafeArea = "throwSafeArea", throwLongDistance = "throwLongDistance"
     static let windowThrow = "windowThrow", throwModifiers = "throwModifiers", throwMouseButton = "throwMouseButton"
     static let throwTrackpadFingers = "throwTrackpadFingers"
     static let quickThrow = "quickThrow", quickThrowModifiers = "quickThrowModifiers"
     static let moveWindow = "moveWindow", moveModifiers = "moveModifiers"
     static let resizeWindow = "resizeWindow", resizeModifiers = "resizeModifiers"
     static let pinEnabled = "pinEnabled", pinBundleID = "pinBundleID", pinWidth = "pinWidth", pinRight = "pinRight"
-    static let iCloudSync = "iCloudSync", stashColorTabs = "stashColorTabs"
+    static let iCloudSync = "iCloudSync", configFile = "configFile", stashColorTabs = "stashColorTabs"
 
     static let modifierMask: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
 
-    /// Settings with their defaults; these are what export and sync carry (not iCloudSync itself).
+    /// Settings with their defaults; these are what export and sync carry (not the sync switches themselves).
     private static let defaults: [String: Any] = {
         func raw(_ flags: NSEvent.ModifierFlags) -> Int { Int(flags.rawValue) }
         return [
             gap: 0, cycleHalves: true, doubleClickTitleBar: false, snapAreas: true, snapPanel: false, snapHaptics: true,
             moveCursorWithWindow: false, resizeAdjacent: false, adjustForDock: false,
             showMenuBarIcon: true, contextClickModifiers: 0,
-            stashRevealDelay: "0", stashRevealWithCommand: false, restoreDisplayLayouts: false,
+            stashRevealDelay: "0", stashRevealWithCommand: false, displayMemory: true, displayMemoryNewWindows: true, snapAssist: true, recordModifierSides: false, floatOpacity: 1.0,
             throwSafeArea: 15, throwLongDistance: 150,
             windowThrow: true, throwModifiers: raw([.control, .command]), throwMouseButton: 0, throwTrackpadFingers: 0,
             quickThrow: false, quickThrowModifiers: raw([.control]),
@@ -74,15 +76,19 @@ enum Prefs {
             resizeWindow: false, resizeModifiers: raw([.control, .option, .shift]),
             pinEnabled: false, pinBundleID: "", pinWidth: "1/4", pinRight: true, stashColorTabs: false,
         ]
-        .merging(Dictionary(uniqueKeysWithValues: SnapArea.allCases.map { ($0.prefKey, $0.defaultSetting) })) { a, _ in a }
-        .merging(Dictionary(uniqueKeysWithValues: (0..<8).flatMap { sector in
-            [(ThrowSectors.prefKey(sector: sector, long: false), ThrowSectors.short[sector].rawValue),
-             (ThrowSectors.prefKey(sector: sector, long: true), ThrowSectors.long[sector].rawValue)]
+        .merging(Dictionary(uniqueKeysWithValues: [false, true].flatMap { portrait in
+            SnapArea.allCases.map { ($0.prefKey(portrait: portrait), $0.defaultSetting) }
+        })) { a, _ in a }
+        .merging(Dictionary(uniqueKeysWithValues: [false, true].flatMap { portrait in
+            (0..<8).flatMap { sector in
+                [(ThrowSectors.prefKey(sector: sector, long: false, portrait: portrait), ThrowSectors.short[sector].rawValue),
+                 (ThrowSectors.prefKey(sector: sector, long: true, portrait: portrait), ThrowSectors.long[sector].rawValue)]
+            }
         })) { a, _ in a }
     }()
 
     static func register() {
-        UserDefaults.standard.register(defaults: defaults.merging([iCloudSync: false]) { a, _ in a })
+        UserDefaults.standard.register(defaults: defaults.merging([iCloudSync: false, configFile: false]) { a, _ in a })
     }
 
     static func snapshot() -> [String: Config.Preference] {

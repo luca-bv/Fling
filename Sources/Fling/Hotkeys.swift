@@ -1,22 +1,47 @@
 import AppKit
 import Carbon.HIToolbox
 
+/// Device-dependent modifier bits in event flags: which physical side of a modifier is held.
+enum ModifierSides {
+    static let leftControl: UInt = 0x1, leftShift: UInt = 0x2, rightShift: UInt = 0x4, leftCommand: UInt = 0x8
+    static let rightCommand: UInt = 0x10, leftOption: UInt = 0x20, rightOption: UInt = 0x40, rightControl: UInt = 0x2000
+    static let all: UInt = 0x207F
+    static let symbols: [(bit: UInt, symbol: String)] = [
+        (leftControl, "‹⌃"), (rightControl, "⌃›"), (leftOption, "‹⌥"), (rightOption, "⌥›"),
+        (leftShift, "‹⇧"), (rightShift, "⇧›"), (leftCommand, "‹⌘"), (rightCommand, "⌘›"),
+    ]
+}
+
 struct Shortcut: Codable, Hashable, CustomStringConvertible {
     let key: Int         // Carbon virtual key code
     let modifiers: UInt  // NSEvent.ModifierFlags raw value
     let chars: String    // unmodified character, used as the menu key equivalent
+    /// Required modifier sides (ModifierSides bits), or nil for either side. Side-specific shortcuts can't be
+    /// Carbon hotkeys, so Fling's event tap handles them.
+    let sides: UInt?
 
-    init(_ key: Int, _ chars: String, _ modifiers: NSEvent.ModifierFlags) {
+    init(_ key: Int, _ chars: String, _ modifiers: NSEvent.ModifierFlags, sides: UInt? = nil) {
         self.key = key
         self.chars = chars
         self.modifiers = modifiers.intersection([.command, .option, .control, .shift]).rawValue
+        self.sides = sides.map { $0 & ModifierSides.all }
     }
 
     var flags: NSEvent.ModifierFlags { NSEvent.ModifierFlags(rawValue: modifiers) }
 
-    func sameKeys(as other: Shortcut) -> Bool { key == other.key && modifiers == other.modifiers }
+    func sameKeys(as other: Shortcut) -> Bool { key == other.key && modifiers == other.modifiers && sides == other.sides }
 
-    var description: String { modifierSymbols(flags) + (Self.keyNames[key] ?? chars.uppercased()) }
+    /// Whether a key press (key code plus raw event flags) is this shortcut.
+    func matches(keyCode: Int, flags raw: UInt) -> Bool {
+        let generic = NSEvent.ModifierFlags(rawValue: raw).intersection([.command, .option, .control, .shift]).rawValue
+        return keyCode == key && generic == modifiers && (sides.map { raw & ModifierSides.all == $0 } ?? true)
+    }
+
+    var description: String {
+        let keyName = Self.keyNames[key] ?? chars.uppercased()
+        guard let sides else { return modifierSymbols(flags) + keyName }
+        return ModifierSides.symbols.filter { sides & $0.bit != 0 }.map(\.symbol).joined() + keyName
+    }
 
     private static let keyNames: [Int: String] = [
         kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
@@ -63,6 +88,7 @@ extension Action {
         case .previousDisplay: return Shortcut(kVK_LeftArrow, "\u{F702}", co.union(.command))
         case .restore:         return Shortcut(kVK_Delete, "\u{7F}", co)
         case .keyboardGrid:    return Shortcut(kVK_ANSI_G, "g", co.union(.command))
+        case .floatOnTop:      return Shortcut(kVK_ANSI_P, "p", co.union(.command))
         default:               return nil
         }
     }
@@ -86,25 +112,22 @@ enum ShortcutStorage {
     static func dictionary(_ shortcuts: [Action: Shortcut]) -> [String: Shortcut?] {
         Dictionary(uniqueKeysWithValues: Action.allCases.map { ($0.rawValue, shortcuts[$0]) })
     }
-
-    static func encode(_ shortcuts: [Action: Shortcut]) -> Data? {
-        try? JSONEncoder().encode(dictionary(shortcuts))
-    }
-
-    static func decode(_ data: Data?) -> [Action: Shortcut] {
-        merged(saved: data.flatMap { try? JSONDecoder().decode([String: Shortcut?].self, from: $0) } ?? [:])
-    }
 }
 
 /// Global hotkeys via Carbon's RegisterEventHotKey: no extra permission, no dependency.
 enum Hotkeys {
     private static var registered: [UInt32: (ref: EventHotKeyRef, repeats: Bool, handler: @MainActor () -> Void)] = [:]
+    private static var sideSpecific: [(shortcut: Shortcut, repeats: Bool, handler: @MainActor () -> Void)] = []
     private static var nextID: UInt32 = 1
     private static var handlerInstalled = false
     nonisolated(unsafe) private static var repeatTimer: Timer?
 
     /// `repeats`: keep firing while the keys are held, like key repeat.
     static func register(_ shortcut: Shortcut, repeats: Bool = false, handler: @escaping @MainActor () -> Void) {
+        if shortcut.sides != nil {
+            sideSpecific.append((shortcut, repeats, handler))
+            return
+        }
         installHandlerOnce()
         let id = EventHotKeyID(signature: OSType(0x464C_4E47), id: nextID) // 'FLNG'
         nextID += 1
@@ -121,6 +144,7 @@ enum Hotkeys {
     static func unregisterAll() {
         registered.values.forEach { UnregisterEventHotKey($0.ref) }
         registered.removeAll()
+        sideSpecific.removeAll()
     }
 
     private static func installHandlerOnce() {
@@ -137,6 +161,14 @@ enum Hotkeys {
             MainActor.assumeIsolated { Hotkeys.hotKey(id.id, pressed: pressed) }
             return noErr
         }, specs.count, &specs, nil, nil)
+    }
+
+    /// Fling's event tap offers every key press here first; returns true if a side-specific shortcut used it.
+    @MainActor
+    static func handleKeyDown(keyCode: Int, flags: UInt, isRepeat: Bool) -> Bool {
+        guard let entry = sideSpecific.first(where: { $0.shortcut.matches(keyCode: keyCode, flags: flags) }) else { return false }
+        if !isRepeat || entry.repeats { entry.handler() } // key repeat drives hold-to-repeat here
+        return true
     }
 
     @MainActor

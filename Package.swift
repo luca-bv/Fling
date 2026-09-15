@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(name: "Fling"),
+        .executableTarget(name: "flingctl"),
         .testTarget(name: "FlingTests", dependencies: ["Fling"]),
     ]
 )

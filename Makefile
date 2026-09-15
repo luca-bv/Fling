@@ -6,12 +6,13 @@ SIGN_IDENTITY ?= $(shell security find-certificate -c "$(CERT_NAME)" >/dev/null 
 # Command Line Tools ship Swift Testing here but don't add it to the search path.
 CLT_FRAMEWORKS := /Library/Developer/CommandLineTools/Library/Developer/Frameworks
 
-.PHONY: app run test smoke clean cert
+.PHONY: app run test smoke clean cert install-cli
+PREFIX ?= $(HOME)/.local
 
 app:
 	swift build -c release
 	rm -rf $(APP) && mkdir -p $(APP)/Contents/MacOS
-	cp .build/release/Fling $(APP)/Contents/MacOS/
+	cp .build/release/Fling .build/release/flingctl $(APP)/Contents/MacOS/
 	printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
 		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
 		'<plist version="1.0"><dict>' \
@@ -25,6 +26,7 @@ app:
 		'<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.lucabv.Fling</string>' \
 		'<key>CFBundleURLSchemes</key><array><string>fling</string></array></dict></array>' \
 		'</dict></plist>' > $(APP)/Contents/Info.plist
+	codesign --force --sign "$(SIGN_IDENTITY)" $(APP)/Contents/MacOS/flingctl
 	codesign --force --sign "$(SIGN_IDENTITY)" $(APP)
 
 run: app
@@ -49,6 +51,12 @@ smoke: app
 	@pkill -x Fling; pkill -x FlingTestWindow; open -n $(TEST_WINDOW); sleep 2; log=$$(mktemp) && \
 	open -W -n --stdout "$$log" --stderr "$$log" $(APP) --args --smoke-test com.lucabv.Fling.TestWindow; \
 	cat "$$log"; pkill -x FlingTestWindow; open $(APP); ! grep -q FAIL "$$log"
+
+# Links flingctl (inside the app bundle) into $(PREFIX)/bin, ~/.local/bin by default.
+install-cli: app
+	mkdir -p "$(PREFIX)/bin"
+	ln -sf "$(CURDIR)/$(APP)/Contents/MacOS/flingctl" "$(PREFIX)/bin/flingctl"
+	@echo "Installed $(PREFIX)/bin/flingctl"
 
 clean:
 	rm -rf .build build

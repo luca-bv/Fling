@@ -4,6 +4,35 @@ import AppKit
 /// Accessibility API and prints PASS/FAIL per step. `make smoke` runs it against Tests/Smoke/TestWindow.swift.
 @MainActor
 enum SmokeTest {
+    private static func waitUntil(seconds: Double, _ condition: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return condition()
+    }
+
+    /// Runs the flingctl bundled next to this app and returns its exit status and combined output.
+    private static func flingctl(_ arguments: [String]) async -> (status: Int32, output: String) {
+        guard let url = Bundle.main.url(forAuxiliaryExecutable: "flingctl") else { return (-1, "flingctl isn't in the app bundle") }
+        let process = Process()
+        process.executableURL = url
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch { return (-1, "\(error)") }
+        // Read off the main thread: flingctl's request is answered on the main queue, which must stay free.
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                continuation.resume(returning: (process.terminationStatus, String(decoding: data, as: UTF8.self)))
+            }
+        }
+    }
+
     static func run(_ state: AppState, bundleID: String) async -> Bool {
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
               let window = Window.all(of: app.processIdentifier).first, let original = window.frame,
@@ -13,7 +42,7 @@ enum SmokeTest {
             return false
         }
         let defaults = UserDefaults.standard
-        let touched = [Prefs.gap, Prefs.cycleHalves, Prefs.pinEnabled, Prefs.pinBundleID, Prefs.pinWidth, Prefs.pinRight]
+        let touched = [Prefs.displayMemory, Prefs.gap, Prefs.cycleHalves, Prefs.pinEnabled, Prefs.pinBundleID, Prefs.pinWidth, Prefs.pinRight]
         // Only values the user actually set; registered defaults read back as values too.
         let persisted = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
         let saved = touched.map { persisted[$0] }
@@ -39,6 +68,10 @@ enum SmokeTest {
         await check("left half", CGRect(x: s.minX, y: s.minY, width: s.width / 2, height: s.height)) {
             state.perform(.leftHalf, on: window)
         }
+        let othersVisible = Window.visible().contains { $0.element != window.element }
+        expect("snap assist offers the other half" + (othersVisible ? "" : " (skipped: no other windows)"),
+               !othersVisible || (state.snapAssist?.isShowing == true
+                   && state.snapAssist?.area.isClose(to: CGRect(x: s.midX, y: s.minY, width: s.width / 2, height: s.height)) == true))
         await check("left half again cycles to ⅔", CGRect(x: s.minX, y: s.minY, width: s.width * 2 / 3, height: s.height)) {
             state.perform(.leftHalf, on: window)
         }
@@ -159,6 +192,73 @@ enum SmokeTest {
             _ = newWindow?.performControl(.close)
             state.layouts.removeAll { $0.id == opened.id }
         }
+
+        if let url = URL(string: "fling://save-layout?name=Smoke%20URL") { state.handle(url) }
+        expect("save-layout URL saves a named layout", state.layouts.contains { $0.name == "Smoke URL" })
+        state.layouts.removeAll { $0.name == "Smoke URL" }
+
+        // Config file: Fling writes it out, and an edit to the file comes back in.
+        let fileKey = "smokeConfigFile", file = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "fling-smoke-config.json")
+        try? FileManager.default.removeItem(at: file)
+        defaults.set(true, forKey: fileKey)
+        let fileSync = ConfigFileSync(state: state, url: file, enabledKey: fileKey, pollInterval: 0.5)
+        fileSync.enabledChanged()
+        // Writes wait for 2 s without other settings changes, so poll rather than sleep a fixed time.
+        let wasWritten = await waitUntil(seconds: 10) { Config.decode(try? Data(contentsOf: file)) == Config.decode(state.exportConfig()) }
+        expect("config file is written", wasWritten)
+        if var edited = Config.decode(try? Data(contentsOf: file)) {
+            try? await Task.sleep(for: .seconds(1.2)) // the file must look newer than Fling's own write
+            edited.layouts.append(Layout(name: "From File"))
+            try? edited.encoded()?.write(to: file)
+        }
+        expect("editing the config file updates Fling", await waitUntil(seconds: 5) { state.layouts.contains { $0.name == "From File" } })
+        state.layouts.removeAll { $0.name == "From File" }
+        defaults.removeObject(forKey: fileKey)
+        defaults.removeObject(forKey: fileKey + "SyncedAt")
+        try? FileManager.default.removeItem(at: file)
+
+        // flingctl, the bundled command-line tool, talking to this Fling over its socket.
+        window.setFrame(original)
+        let moved = await flingctl(["--app", bundleID, "right-half"])
+        try? await Task.sleep(for: .milliseconds(300))
+        expect("flingctl moves an app's window (exit \(moved.status))", moved.status == 0
+            && window.frame?.isClose(to: CGRect(x: s.midX, y: s.minY, width: s.width / 2, height: s.height)) == true)
+        let framed = await flingctl(["frame", "120", "140", "500", "360", "--app", bundleID])
+        try? await Task.sleep(for: .milliseconds(300))
+        expect("flingctl frame sets an exact frame", framed.status == 0
+            && window.frame?.isClose(to: CGRect(x: 120, y: 140, width: 500, height: 360)) == true)
+        let windows = await flingctl(["windows"])
+        expect("flingctl windows lists the test window", windows.status == 0 && windows.output.contains("Fling Smoke Test"))
+        let displays = await flingctl(["displays", "--json"])
+        expect("flingctl displays --json", displays.status == 0 && displays.output.contains("\"primary\""))
+        let unknown = await flingctl(["no-such-command"])
+        expect("flingctl fails on an unknown command", unknown.status == 1 && unknown.output.contains("Unknown command"))
+        window.setFrame(original)
+
+        // Float on Top needs Screen Recording permission, which only the user can grant.
+        if CGPreflightScreenCaptureAccess() {
+            state.floating?.toggle(window)
+            try? await Task.sleep(for: .seconds(2))
+            let mirror = state.floating?.mirrors.first
+            expect("float on top mirrors the window (\(mirror?.framesReceived ?? 0) frames)", mirror.map { $0.framesReceived > 0 } == true)
+            state.floating?.unfloatAll()
+            expect("unfloat all", state.floating?.mirrors.isEmpty == true)
+        } else {
+            print("SKIP float on top: Screen Recording permission not granted")
+        }
+
+        // Display memory: record, let the window wander, then restore as after a display change.
+        defaults.set(true, forKey: Prefs.displayMemory)
+        window.setFrame(original)
+        try? await Task.sleep(for: .milliseconds(300))
+        state.displayMemory?.snapshot()
+        window.setFrame(CGRect(x: s.minX, y: s.minY, width: 400, height: 300))
+        state.displayMemory?.restore(after: 0)
+        try? await Task.sleep(for: .milliseconds(800))
+        expect("display memory puts the window back" + (window.frame?.isClose(to: original) == true ? ""
+            : " — expected \(original), got \(String(describing: window.frame))"), window.frame?.isClose(to: original) == true)
+        state.displayMemory?.forget(bundleID: bundleID)
+        state.snapAssist?.hide()
 
         state.perform(.minimize, on: window)
         try? await Task.sleep(for: .milliseconds(800))

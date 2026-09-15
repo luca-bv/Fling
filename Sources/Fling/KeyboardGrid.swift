@@ -28,7 +28,7 @@ final class KeyboardGrid {
 
     func show(for window: Window) {
         guard let frame = window.frame, let area = state.usableArea(for: window, frame: frame),
-              let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first
+              let primary = NSScreen.screens.first
         else { return NSSound.beep() }
         target = (window, area)
         first = nil
@@ -51,8 +51,10 @@ final class KeyboardGrid {
             return true
         }
         let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap))
-        state.place(target.window, at: KeyGrid.frame(from: first, to: cell, in: target.area, gap: gap), key: "keyboardGrid")
+        let frame = KeyGrid.frame(from: first, to: cell, in: target.area, gap: gap)
+        state.place(target.window, at: frame, key: "keyboardGrid")
         hide()
+        state.snapAssist?.offer(after: target.window, placedAt: frame)
         return true
     }
 

@@ -155,6 +155,9 @@ BetterStage already sells plain-language arrangements as a subscription. Fling c
 
 ## 6. Suggested roadmap
 
+**Status (2026-09-14):** built and live-tested with `make smoke`: the keyboard grid (C), stash re-tucking after sleep (H), diagnostics (E), Shortcuts/URL recipes plus `save-layout` and the dotfile config (D), display-configuration memory (A, without Spaces), Snap Assist (B), portrait profiles and left/right-specific shortcuts (G). Also built: `flingctl` (socket-based CLI with listings, frames, config import/export) and always on top (F, via ScreenCaptureKit mirrors; needs Screen Recording). Not started: Spaces-aware memory, AI arrangements (I).
+
+
 1. **Quick wins (days):** keyboard grid (C), stash that survives sleep (H), diagnostics pane (E), Shortcuts/URL recipes in the README (D).
 2. **Signature feature (1–2 weeks):** display-configuration memory (A), then Spaces awareness.
 3. **Differentiated polish:** Snap Assist (B), per-display profiles and left/right modifiers (G).

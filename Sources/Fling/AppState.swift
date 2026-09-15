@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor @Observable
 final class AppState {
     var shortcuts: [Action: Shortcut] {
-        didSet { UserDefaults.standard.set(ShortcutStorage.encode(shortcuts), forKey: "shortcuts"); registerHotkeys() }
+        didSet { Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts"); registerHotkeys() }
     }
     var customActions: [CustomAction] {
         didSet { Store.save(customActions, key: "customActions"); registerHotkeys() }
@@ -25,35 +25,41 @@ final class AppState {
     @ObservationIgnored private var gestures: Gestures?
     @ObservationIgnored private var screenCount = NSScreen.screens.count
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
-    @ObservationIgnored private(set) var cloudSync: CloudSync?
+    @ObservationIgnored private(set) var cloudSync: ConfigFileSync?
+    @ObservationIgnored private(set) var configFile: ConfigFileSync?
     @ObservationIgnored private var windowWatcher: WindowWatcher?
     @ObservationIgnored private(set) var contextMenu: ContextMenu?
     @ObservationIgnored private(set) var keyboardGrid: KeyboardGrid?
+    @ObservationIgnored private(set) var snapAssist: SnapAssist?
+    @ObservationIgnored private(set) var floating: FloatingWindows?
+    @ObservationIgnored private var commandServer: CommandServer?
     /// Recent placements and failures, newest last, shown in Settings → Diagnostics.
     var diagnostics: [DiagnosticEntry] = []
     @ObservationIgnored private var lastVisibleFrames = Screen.all().map(\.visible)
-    @ObservationIgnored private var lastScreenIDs = Set(Screen.all().map(\.id))
-    @ObservationIgnored private var displaySnapshots: [String: [(window: Window, frame: CGRect)]] = [:]
-    @ObservationIgnored private var snapshotTimer: Timer?
+    @ObservationIgnored private var lastDisplayKey = DisplayMemoryStore.key(for: Screen.all())
+    @ObservationIgnored private(set) var displayMemory: DisplayMemory?
 
     init() {
         Prefs.register()
         // Shows the system Accessibility prompt if Fling isn't trusted yet.
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-        shortcuts = ShortcutStorage.decode(UserDefaults.standard.data(forKey: "shortcuts"))
+        shortcuts = ShortcutStorage.merged(saved: Store.load("shortcuts") ?? [:])
         customActions = Store.load("customActions") ?? []
         layouts = Store.load("layouts") ?? []
         registerHotkeys()
         gestures = Gestures(state: self)
         observeTriggers()
-        cloudSync = CloudSync(state: self)
+        cloudSync = ConfigFileSync(state: self, url: ConfigFileSync.iCloudURL, enabledKey: Prefs.iCloudSync, pollInterval: 30)
+        configFile = ConfigFileSync(state: self, url: ConfigFileSync.dotfileURL, enabledKey: Prefs.configFile, pollInterval: 2)
         windowWatcher = WindowWatcher { [weak self] in self?.windowOpened($0) }
         contextMenu = ContextMenu(state: self)
         keyboardGrid = KeyboardGrid(state: self)
-        // ponytail: a 15 s snapshot can miss windows moved just before a display is unplugged.
-        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.snapshotDisplays() }
+        snapAssist = SnapAssist(state: self)
+        floating = FloatingWindows(state: self)
+        commandServer = CommandServer { [weak self] args, cwd in
+            self?.runCommand(args, workingDirectory: cwd) ?? (false, "Fling is quitting.")
         }
+        displayMemory = DisplayMemory(state: self)
     }
 
     // MARK: Configuration
@@ -112,12 +118,9 @@ final class AppState {
     }
 
     func handle(_ url: URL) {
-        switch URLCommand(url) {
-        case .action(let action): perform(action)
-        case .custom(let name): customActions.first { $0.name == name }.map { perform(custom: $0.id) }
-        case .layout(let name): layouts.first { $0.name == name }.map { apply(layout: $0.id) }
-        case nil: NSLog("Fling: unrecognized URL \(url)")
-        }
+        guard let arguments = commandArguments(for: url) else { return NSLog("Fling: unrecognized URL \(url)") }
+        let result = runCommand(arguments, workingDirectory: NSHomeDirectory())
+        if !result.ok { NSLog("Fling: \(url): \(result.output)") }
     }
 
     private func registerHotkeys() {
@@ -143,6 +146,7 @@ final class AppState {
     func perform(_ action: Action, on given: Window? = nil, screen: Int? = nil) {
         switch action {
         case .unstashAll: return stash.unstashAll()
+        case .unfloatAll: return floating?.unfloatAll() ?? ()
         case .stashAll: return stash.stashAll(exceptFocused: false)
         case .stashAllExceptFront: return stash.stashAll(exceptFocused: true)
         case .toggleStashed: return stash.toggleAll()
@@ -160,6 +164,8 @@ final class AppState {
         switch action {
         case .keyboardGrid:
             return keyboardGrid?.show(for: window) ?? ()
+        case .floatOnTop:
+            return floating?.toggle(window) ?? ()
         case .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown:
             guard let frame = window.frame else { return }
             let current = Action.allCases.filter { $0.category == .halves || $0.category == .corners || $0 == .maximize }
@@ -187,6 +193,9 @@ final class AppState {
         if action == .restore { restoreFrames[window.element] = nil }
         place(window, from: frame, to: target, key: action.rawValue, count: count, rememberRestore: action != .restore)
         lastPlacement[window.element] = action.placesWindow ? action : nil
+        if [.halves, .corners, .thirds, .fourths, .sixths, .fill].contains(action.category) {
+            snapAssist?.offer(after: window, placedAt: target)
+        }
 
         // Keyboard and menu commands that send a window to another display bring the cursor along.
         let visibles = Screen.all().map(\.visible)
@@ -308,6 +317,7 @@ final class AppState {
             nil
         }
         log(Action(rawValue: key)?.title ?? titleCase(key), window: window, requested: target, actual: actual, problem: problem)
+        displayMemory?.windowsChanged()
     }
 
     /// Places a window at an exact frame, remembering the old one for Restore (used by the keyboard grid).
@@ -317,6 +327,12 @@ final class AppState {
         lastPlacement[window.element] = nil
     }
 
+    /// Snap Assist's space to fill beside a placed window, on that window's screen.
+    func freeArea(beside frame: CGRect, window: Window) -> CGRect? {
+        let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap))
+        return usableArea(for: window, frame: frame).flatMap { snapAssistArea(placed: frame, in: $0, gap: gap) }
+    }
+
     /// The usable area of the screen a window is on (Pin Mode's strip excluded).
     func usableArea(for window: Window, frame: CGRect) -> CGRect? {
         let screens = Screen.all()
@@ -324,7 +340,7 @@ final class AppState {
         return usableArea(screens, screenIndex(for: frame, in: screens.map(\.visible)), for: window)
     }
 
-    private func log(_ command: String, window: Window? = nil, requested: CGRect? = nil, actual: CGRect? = nil, problem: String?) {
+    func log(_ command: String, window: Window? = nil, requested: CGRect? = nil, actual: CGRect? = nil, problem: String?) {
         let app = window.flatMap { NSRunningApplication(processIdentifier: $0.pid)?.localizedName } ?? "—"
         diagnostics.append(DiagnosticEntry(command: command, app: app, window: window?.title ?? "",
                                            requested: requested, actual: actual, problem: problem))
@@ -389,7 +405,8 @@ final class AppState {
 
     // MARK: Layouts
 
-    func saveCurrentLayout() {
+    /// Saves every visible window as a layout; an existing layout with the same name is replaced (keeping its settings).
+    func saveCurrentLayout(name: String? = nil) {
         let screens = Screen.all()
         guard !screens.isEmpty else { return }
         var entries: [LayoutEntry] = []
@@ -410,7 +427,11 @@ final class AppState {
                 entries.append(entry)
             }
         }
-        layouts.append(Layout(name: "Layout \(layouts.count + 1)", entries: entries))
+        if let name, let index = layouts.firstIndex(where: { $0.name == name }) {
+            layouts[index].entries = entries
+        } else {
+            layouts.append(Layout(name: name ?? "Layout \(layouts.count + 1)", entries: entries))
+        }
     }
 
     func apply(layout id: UUID, launchMissing: Bool = true) {
@@ -469,7 +490,7 @@ final class AppState {
         lastPlacement[window.element] = entry.action
     }
 
-    /// "Apply when a window opens" layouts place just the new window, using the first entry that matches it.
+    /// A new window goes where an "apply when a window opens" layout says, or else back to its remembered spot.
     private func windowOpened(_ window: Window) {
         let screens = Screen.all()
         guard let bundleID = window.bundleID, !screens.isEmpty else { return }
@@ -480,6 +501,7 @@ final class AppState {
                 return place(window, with: entry, screens: screens)
             }
         }
+        _ = displayMemory?.windowOpened(window)
     }
 
     private func observeTriggers() {
@@ -490,6 +512,7 @@ final class AppState {
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    self?.displayMemory?.restore(after: 1.5)
                     self?.runLayouts(for: .wake)
                     self?.restashSoon()
                 }
@@ -500,38 +523,19 @@ final class AppState {
         let count = NSScreen.screens.count
         let screens = Screen.all()
         let visible = screens.map(\.visible)
-        let reconnected = Set(screens.map(\.id)).subtracting(lastScreenIDs)
+        let displayKey = DisplayMemoryStore.key(for: screens)
         defer {
             screenCount = count
             lastVisibleFrames = visible
-            lastScreenIDs = Set(screens.map(\.id))
+            lastDisplayKey = displayKey
         }
-        if !reconnected.isEmpty, UserDefaults.standard.bool(forKey: Prefs.restoreDisplayLayouts) {
-            Task {
-                try? await Task.sleep(for: .seconds(1.5)) // let macOS finish moving windows around first
-                for id in reconnected {
-                    for (window, frame) in displaySnapshots[id] ?? [] { window.setFrame(frame) }
-                }
-            }
-        }
+        if displayKey != lastDisplayKey { displayMemory?.restore(after: 1.5) }
         restashSoon()
         if count > screenCount { runLayouts(for: .displayConnected) }
         if count < screenCount { runLayouts(for: .displayDisconnected) }
         if count == screenCount, visible != lastVisibleFrames, UserDefaults.standard.bool(forKey: Prefs.adjustForDock) {
             followUsableArea(from: lastVisibleFrames, to: visible)
         }
-    }
-
-    /// Remembers where windows sit on each display, so they can return when it's reconnected.
-    private func snapshotDisplays() {
-        guard UserDefaults.standard.bool(forKey: Prefs.restoreDisplayLayouts), NSScreen.screens.count > 1 else { return }
-        let screens = Screen.all()
-        var byDisplay: [String: [(window: Window, frame: CGRect)]] = [:]
-        for window in Window.visible() {
-            guard let frame = window.frame else { continue }
-            byDisplay[screens[screenIndex(for: frame, in: screens.map(\.visible))].id, default: []].append((window, frame))
-        }
-        for screen in screens { displaySnapshots[screen.id] = byDisplay[screen.id] ?? [] }
     }
 
     /// The Dock was shown, hidden or moved: windows flush against a changed edge follow it.
@@ -551,7 +555,7 @@ final class AppState {
         let ids = layouts.filter { $0.triggers.contains(trigger) }.map(\.id)
         guard !ids.isEmpty else { return }
         Task {
-            try? await Task.sleep(for: .seconds(1)) // let the display arrangement settle
+            try? await Task.sleep(for: .seconds(2.5)) // after the arrangement settles and remembered positions return
             ids.forEach { apply(layout: $0) }
         }
     }
