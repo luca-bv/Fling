@@ -136,5 +136,5 @@ private let window = CGRect(x: 100, y: 100, width: 400, height: 300)
 @Test func storedDataKeysDontCollideWithSettings() {
     // A settings key that's also used for stored JSON gets overwritten by it (display memory once turned itself off).
     let settings = Set(Prefs.snapshot().keys).union([Prefs.iCloudSync, Prefs.configFile])
-    #expect(settings.isDisjoint(with: ["shortcuts", "customActions", "layouts", "displayMemoryStore"]))
+    #expect(settings.isDisjoint(with: ["shortcuts", "shortcuts.v2", "customActions", "layouts", "displayMemoryStore"]))
 }

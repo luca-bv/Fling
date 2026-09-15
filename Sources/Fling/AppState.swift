@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor @Observable
 final class AppState {
     var shortcuts: [Action: Shortcut] {
-        didSet { Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts"); registerHotkeys() }
+        didSet { Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts.v2"); registerHotkeys() }
     }
     var customActions: [CustomAction] {
         didSet { Store.save(customActions, key: "customActions"); registerHotkeys() }
@@ -43,9 +43,16 @@ final class AppState {
         Prefs.register()
         // Shows the system Accessibility prompt if Fling isn't trusted yet.
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-        shortcuts = ShortcutStorage.merged(saved: Store.load("shortcuts") ?? [:])
+        // Version 1 saved every action, with nil for any without a shortcut, which would hide new defaults.
+        // Keep only its real shortcuts; the next save writes version 2 (differences from the defaults).
+        let legacy = (Store.load("shortcuts") as [String: Shortcut?]?)?.filter { $0.value != nil }
+        shortcuts = ShortcutStorage.merged(saved: Store.load("shortcuts.v2") ?? legacy ?? [:])
         customActions = Store.load("customActions") ?? []
         layouts = Store.load("layouts") ?? []
+        if legacy != nil {
+            Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts.v2")
+            UserDefaults.standard.removeObject(forKey: "shortcuts")
+        }
         registerHotkeys()
         gestures = Gestures(state: self)
         observeTriggers()

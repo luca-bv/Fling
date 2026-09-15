@@ -38,23 +38,52 @@ If you also run Rectangle, quit it first. It uses the same default shortcuts.
 
 ## Shortcuts
 
-| Action | Shortcut |
-|---|---|
-| Left / Right / Top / Bottom Half | ⌃⌥ ← → ↑ ↓ |
-| Top Left / Top Right / Bottom Left / Bottom Right | ⌃⌥ U I J K |
-| First / Center / Last Third | ⌃⌥ D F G |
-| First / Last Two Thirds | ⌃⌥ E T |
-| Maximize | ⌃⌥ ↩ |
-| Maximize Height | ⌃⌥⇧ ↑ |
-| Almost Maximize | menu only |
-| Center | ⌃⌥ C |
-| Larger / Smaller | ⌃⌥ = − |
-| Next / Previous Display | ⌃⌥⌘ → ← |
-| Keyboard Grid | ⌃⌥⌘ G |
-| Float on Top | ⌃⌥⌘ P |
-| Restore | ⌃⌥ ⌫ |
+Four layers, all built on ⌃⌥ and clear of macOS's own shortcuts. Rectangle's keys are unchanged, so switching from Rectangle or Rectangle Pro needs no relearning.
 
-Every action is also available in the menu bar menu. Change or clear shortcuts in **Settings → Shortcuts** (⌘, from the menu).
+**⌃⌥ places the window**
+
+| Keys | Action |
+|---|---|
+| ⌃⌥ ← → ↑ ↓ | Left / Right / Top / Bottom Half (repeat: ½ → ⅔ → ⅓) |
+| ⌃⌥ U I J K | Top Left / Top Right / Bottom Left / Bottom Right |
+| ⌃⌥ D F G | First / Center / Last Third |
+| ⌃⌥ E R T | First / Center / Last Two Thirds |
+| ⌃⌥ 1 2 3 4 | First / Second / Third / Last Fourth |
+| ⌃⌥ L ; ' | Top Left / Center / Right Sixth |
+| ⌃⌥ , . / | Bottom Left / Center / Right Sixth |
+| ⌃⌥ ↩ | Maximize |
+| ⌃⌥ C | Center |
+| ⌃⌥ − = | Smaller / Larger (hold to repeat) |
+| ⌃⌥ ⌫ | Restore |
+
+**⌃⌥⇧ is a variant of the same key**
+
+| Keys | Action |
+|---|---|
+| ⌃⌥⇧ ↑ | Maximize Height |
+| ⌃⌥⇧ ↩ | Almost Maximize |
+| ⌃⌥⇧ ← → | Fill Left / Right |
+| ⌃⌥⇧ C | Upper Center |
+| ⌃⌥⇧ 1 4 | First / Last Three Fourths |
+
+**⌃⌥⌘ moves between screens and opens tools**
+
+| Keys | Action |
+|---|---|
+| ⌃⌥⌘ ← → | Previous / Next Display |
+| ⌃⌥⌘ [ ] | Previous / Next Space |
+| ⌃⌥⌘ G | Keyboard Grid |
+| ⌃⌥⌘ P | Float on Top |
+| ⌃⌥⌘ M | Fling menu at the cursor |
+
+**⌃⌥⌘⇧ stashes** (one key if Caps Lock is remapped to Hyper)
+
+| Keys | Action |
+|---|---|
+| ⌃⌥⌘⇧ ← → | Stash Left / Right |
+| ⌃⌥⌘⇧ ↓ | Toggle Stashed Windows |
+
+Everything else (nudge, move to edge, Win Arrow Keys, tiles, Pin Mode…) has no default. Assign keys in **Settings → Shortcuts** (⌘, from the menu); only your changes are saved, so improved defaults still reach you.
 
 ## Command line
 

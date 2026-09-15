@@ -62,34 +62,65 @@ func modifierSymbols(_ flags: NSEvent.ModifierFlags) -> String {
 }
 
 extension Action {
-    /// Defaults match Rectangle's, so switching over needs no relearning.
+    /// Default shortcuts, in four layers that stay out of macOS's reserved combos (⌃⌥Space, ⌃⌘Space/F/Q,
+    /// ⌃⌥⌘8/,/., Mission Control's ⌃arrows, and fn⌃ tiling):
+    /// - ⌃⌥ places the window. It keeps Rectangle's keys (arrows, U I J K, D F G, E T, ↩, C, − =, ⌫) so switching
+    ///   costs nothing, and fills the gaps: E R T = first/center/last two-thirds, 1–4 = fourths, and sixths on the
+    ///   right hand's 3×2 block (L ; ' over , . /).
+    /// - ⌃⌥⇧ is a variant of the same key: ↑ full height, ↩ almost maximize, ←/→ fill, C upper center, 1/4 three-fourths.
+    /// - ⌃⌥⌘ moves between displays (←/→) and Spaces ([/]) and opens tools: G grid, P float on top, M menu.
+    /// - ⌃⌥⌘⇧ (a single Hyper key for Caps Lock remappers) stashes: ←/→ to that edge, ↓ toggles stashed windows.
     var defaultShortcut: Shortcut? {
         let co: NSEvent.ModifierFlags = [.control, .option]
+        let shifted = co.union(.shift), command = co.union(.command), hyper = command.union(.shift)
         switch self {
-        case .leftHalf:        return Shortcut(kVK_LeftArrow, "\u{F702}", co)
-        case .rightHalf:       return Shortcut(kVK_RightArrow, "\u{F703}", co)
-        case .topHalf:         return Shortcut(kVK_UpArrow, "\u{F700}", co)
-        case .bottomHalf:      return Shortcut(kVK_DownArrow, "\u{F701}", co)
-        case .topLeft:         return Shortcut(kVK_ANSI_U, "u", co)
-        case .topRight:        return Shortcut(kVK_ANSI_I, "i", co)
-        case .bottomLeft:      return Shortcut(kVK_ANSI_J, "j", co)
-        case .bottomRight:     return Shortcut(kVK_ANSI_K, "k", co)
-        case .firstThird:      return Shortcut(kVK_ANSI_D, "d", co)
-        case .centerThird:     return Shortcut(kVK_ANSI_F, "f", co)
-        case .lastThird:       return Shortcut(kVK_ANSI_G, "g", co)
-        case .firstTwoThirds:  return Shortcut(kVK_ANSI_E, "e", co)
-        case .lastTwoThirds:   return Shortcut(kVK_ANSI_T, "t", co)
-        case .maximize:        return Shortcut(kVK_Return, "\r", co)
-        case .maximizeHeight:  return Shortcut(kVK_UpArrow, "\u{F700}", co.union(.shift))
-        case .center:          return Shortcut(kVK_ANSI_C, "c", co)
-        case .larger:          return Shortcut(kVK_ANSI_Equal, "=", co)
-        case .smaller:         return Shortcut(kVK_ANSI_Minus, "-", co)
-        case .nextDisplay:     return Shortcut(kVK_RightArrow, "\u{F703}", co.union(.command))
-        case .previousDisplay: return Shortcut(kVK_LeftArrow, "\u{F702}", co.union(.command))
-        case .restore:         return Shortcut(kVK_Delete, "\u{7F}", co)
-        case .keyboardGrid:    return Shortcut(kVK_ANSI_G, "g", co.union(.command))
-        case .floatOnTop:      return Shortcut(kVK_ANSI_P, "p", co.union(.command))
-        default:               return nil
+        case .leftHalf:          return Shortcut(kVK_LeftArrow, "\u{F702}", co)
+        case .rightHalf:         return Shortcut(kVK_RightArrow, "\u{F703}", co)
+        case .topHalf:           return Shortcut(kVK_UpArrow, "\u{F700}", co)
+        case .bottomHalf:        return Shortcut(kVK_DownArrow, "\u{F701}", co)
+        case .topLeft:           return Shortcut(kVK_ANSI_U, "u", co)
+        case .topRight:          return Shortcut(kVK_ANSI_I, "i", co)
+        case .bottomLeft:        return Shortcut(kVK_ANSI_J, "j", co)
+        case .bottomRight:       return Shortcut(kVK_ANSI_K, "k", co)
+        case .firstThird:        return Shortcut(kVK_ANSI_D, "d", co)
+        case .centerThird:       return Shortcut(kVK_ANSI_F, "f", co)
+        case .lastThird:         return Shortcut(kVK_ANSI_G, "g", co)
+        case .firstTwoThirds:    return Shortcut(kVK_ANSI_E, "e", co)
+        case .centerTwoThirds:   return Shortcut(kVK_ANSI_R, "r", co)
+        case .lastTwoThirds:     return Shortcut(kVK_ANSI_T, "t", co)
+        case .firstFourth:       return Shortcut(kVK_ANSI_1, "1", co)
+        case .secondFourth:      return Shortcut(kVK_ANSI_2, "2", co)
+        case .thirdFourth:       return Shortcut(kVK_ANSI_3, "3", co)
+        case .lastFourth:        return Shortcut(kVK_ANSI_4, "4", co)
+        case .firstThreeFourths: return Shortcut(kVK_ANSI_1, "1", shifted)
+        case .lastThreeFourths:  return Shortcut(kVK_ANSI_4, "4", shifted)
+        case .topLeftSixth:      return Shortcut(kVK_ANSI_L, "l", co)
+        case .topCenterSixth:    return Shortcut(kVK_ANSI_Semicolon, ";", co)
+        case .topRightSixth:     return Shortcut(kVK_ANSI_Quote, "'", co)
+        case .bottomLeftSixth:   return Shortcut(kVK_ANSI_Comma, ",", co)
+        case .bottomCenterSixth: return Shortcut(kVK_ANSI_Period, ".", co)
+        case .bottomRightSixth:  return Shortcut(kVK_ANSI_Slash, "/", co)
+        case .maximize:          return Shortcut(kVK_Return, "\r", co)
+        case .almostMaximize:    return Shortcut(kVK_Return, "\r", shifted)
+        case .maximizeHeight:    return Shortcut(kVK_UpArrow, "\u{F700}", shifted)
+        case .center:            return Shortcut(kVK_ANSI_C, "c", co)
+        case .upperCenter:       return Shortcut(kVK_ANSI_C, "c", shifted)
+        case .fillLeft:          return Shortcut(kVK_LeftArrow, "\u{F702}", shifted)
+        case .fillRight:         return Shortcut(kVK_RightArrow, "\u{F703}", shifted)
+        case .larger:            return Shortcut(kVK_ANSI_Equal, "=", co)
+        case .smaller:           return Shortcut(kVK_ANSI_Minus, "-", co)
+        case .restore:           return Shortcut(kVK_Delete, "\u{7F}", co)
+        case .nextDisplay:       return Shortcut(kVK_RightArrow, "\u{F703}", command)
+        case .previousDisplay:   return Shortcut(kVK_LeftArrow, "\u{F702}", command)
+        case .nextSpace:         return Shortcut(kVK_ANSI_RightBracket, "]", command)
+        case .previousSpace:     return Shortcut(kVK_ANSI_LeftBracket, "[", command)
+        case .keyboardGrid:      return Shortcut(kVK_ANSI_G, "g", command)
+        case .floatOnTop:        return Shortcut(kVK_ANSI_P, "p", command)
+        case .showMenu:          return Shortcut(kVK_ANSI_M, "m", command)
+        case .stashLeft:         return Shortcut(kVK_LeftArrow, "\u{F702}", hyper)
+        case .stashRight:        return Shortcut(kVK_RightArrow, "\u{F703}", hyper)
+        case .toggleStashed:     return Shortcut(kVK_DownArrow, "\u{F701}", hyper)
+        default:                 return nil
         }
     }
 
@@ -108,9 +139,17 @@ enum ShortcutStorage {
         return result
     }
 
-    /// Every action by name; `nil` marks a cleared shortcut.
+    /// Only the shortcuts that differ from the defaults (`nil` marks a cleared default), so changes to the
+    /// defaults still reach people who customized something else.
     static func dictionary(_ shortcuts: [Action: Shortcut]) -> [String: Shortcut?] {
-        Dictionary(uniqueKeysWithValues: Action.allCases.map { ($0.rawValue, shortcuts[$0]) })
+        var changes: [String: Shortcut?] = [:]
+        for action in Action.allCases {
+            // Same keys count as unchanged, even if the recorded menu character differs.
+            if let current = shortcuts[action], let fallback = action.defaultShortcut, current.sameKeys(as: fallback) { continue }
+            if shortcuts[action] == nil, action.defaultShortcut == nil { continue }
+            changes.updateValue(shortcuts[action], forKey: action.rawValue)
+        }
+        return changes
     }
 }
 

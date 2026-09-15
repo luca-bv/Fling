@@ -412,7 +412,10 @@ struct ShortcutRecorder: View {
             } else {
                 let sides = UserDefaults.standard.bool(forKey: Prefs.recordModifierSides)
                     ? UInt(event.modifierFlags.rawValue) & ModifierSides.all : nil
-                shortcut = Shortcut(Int(event.keyCode), event.characters(byApplyingModifiers: []) ?? "", flags, sides: sides)
+                // Arrow and function keys come back as control characters here; menus want their function-key form.
+                let plain = event.characters(byApplyingModifiers: []) ?? ""
+                let chars = plain.unicodeScalars.first.map { $0.value < 0x20 } == true ? (event.charactersIgnoringModifiers ?? plain) : plain
+                shortcut = Shortcut(Int(event.keyCode), chars, flags, sides: sides)
                 stop()
             }
             return nil
