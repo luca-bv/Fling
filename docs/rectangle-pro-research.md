@@ -4,6 +4,28 @@ Researched 2026-09-14. Primary source: the official guide at rectangleapp.com/pr
 
 ---
 
+## Fling status (2026-09-14)
+
+Fling now covers most of this inventory. ✅ built · ◐ partly · ⬜ not built.
+
+| Area (§) | Status | Notes |
+|---|---|---|
+| Window Throw (2.1) | ✅ | ⌃⌘ modifiers, mouse button, trackpad (3–5 fingers → 1); 16 configurable positions (portrait separately); dead zone and long-throw distance; center on another display. ⬜ Scrolling to resize the footprint, reticle styling, "ignore windows without toolbars" |
+| Move & Resize (2.1) | ✅ | Hold modifiers and move the cursor |
+| Quick Throw (2.2) | ◐ | One modifier, with a fixed mapping (left/right halves, up maximize, down minimize); Rectangle Pro sets a modifier per action |
+| Action catalog (2.3) | ◐ | ✅ Halves, corners, thirds, fourths, sixths, maximize/almost/height, center, upper center, fill left/right, move to edges, nudge, larger/smaller, next/previous display (proportional), next/previous Space (untested), window controls, 2×2/2×3 tiles, cascade all/app, app halves, Win Arrow Keys, hold-to-repeat. ⬜ Fill corners, top/center/bottom thirds on landscape, fifths, eighths, ninths, corner two-thirds, center three-fourths, width- or height-only size, snap-to-corner moves, separate "display ratio" actions, Last, Tidy, Reveal Desktop Edge |
+| Repeat behavior (2.3) | ◐ | Halves cycle ½ → ⅔ → ⅓; custom positions cycle through repeats. ⬜ Cycling across displays, choosing sizes, reset when modifiers are released |
+| Custom Size & Position (2.4) | ◐ | Anchors, fractions or points, blank keeps the current value, target display, repeats, shortcut, snap target, URL and CLI. ⬜ Center Offset anchor, create from an existing window, View Footprint, auto icons |
+| Snap areas, targets, panel (2.5) | ◐ | Every edge and corner configurable (portrait separately), bottom-edge thirds, restore on unsnap, haptics, snap targets, Snap Panel. ⬜ Other edge modes (drag toward center for ⅔, sixths from corners, fourths columns), panel position, modifier-gated targets, footprint appearance settings |
+| Layouts (2.6) | ✅ | Save (presets where possible), shortcut, URL, CLI, triggers (display connect/disconnect, wake, window opens), frontmost app only, all matches, bring to front, launch missing apps, hide others, title matching, repeats via custom positions. ⬜ Minimize or quit other apps, per-entry repeats |
+| Stash (2.7) | ◐ | Left/right, All, All Except Front, Toggle, Cycle, Unstash All, reveal delay, ⌘-only, hide when the cursor leaves, unstash on drag or another action, color tabs, re-tucked after sleep. ⬜ Up/down (macOS limits), animation, unhide when the app becomes frontmost, "hide in corner" |
+| Pin Mode (2.8) | ✅ | App, width, side, toggle, reflow |
+| Menu & icon (2.9) | ◐ | Hide icon, context menu by shortcut and by modifier-click. ⬜ Icon variants, choosing which items appear |
+| General (2.10) | ◐ | Gaps, move cursor with window, double-click title bar, resize neighbors, Dock adjustment, restore windows on reconnect (now display memory), iCloud sync, JSON export/import, launch at login. ⬜ Stage Manager strip, "allow any keyboard shortcut", importing Rectangle's shortcuts, auto-updates (Sparkle), per-edge screen gaps and other hidden Terminal settings |
+| Automation (2.11) | ✅ | `fling://` URLs (execute-action/custom/layout, save-layout) plus `flingctl`, which Rectangle Pro doesn't have |
+
+Beyond Rectangle Pro (see `differentiation-research.md`): display memory, Snap Assist, keyboard grid, Float on Top, Diagnostics, left/right-specific shortcuts, a dotfile config, and `flingctl`.
+
 ## 1. The basics
 
 | | |

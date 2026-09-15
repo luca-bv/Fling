@@ -14,11 +14,11 @@ A lightweight macOS window manager that lives in the menu bar.
 - **Multiple windows**: 2×2 and 2×3 tiles, cascade, app halves.
 - **Stash** windows at the screen edge (with color tabs, delay, ⌘-only); Stash All, Toggle and Cycle.
 - **Pin Mode** keeps one app in a strip; everything else fills the rest.
-- Gaps, double-click title bar to maximize, Dock-aware resizing, windows return when a display reconnects, context menu at the cursor, hideable menu bar icon, launch at login.
+- Gaps, double-click title bar to maximize, Dock-aware resizing, context menu at the cursor, hideable menu bar icon, launch at login.
 - **Configuration** export/import as JSON, iCloud Drive sync, and an optional `~/.config/fling/config.json` that Fling keeps up to date and reloads when you edit it (dotfiles-friendly).
 - **Left/right-specific shortcuts** (e.g. right ⌘ + arrows), recorded from Settings → Shortcuts.
 - **Diagnostics**: Settings → Diagnostics lists recent actions and explains why a window didn't move (fixed-size window, unresponsive app, missing permission), with a copyable report.
-- **URL scheme**: `open -g "fling://execute-action?name=left-half"`, `fling://execute-custom?name=…`, `fling://execute-layout?name=…`
+- **Command line and URLs**: `flingctl` and `fling://` URLs run actions, custom positions and layouts from scripts, Shortcuts and launchers (see below).
 
 Requires macOS 14+.
 
@@ -26,11 +26,11 @@ Requires macOS 14+.
 
 ```sh
 make run    # builds build/Fling.app and opens it
-make test   # unit tests (geometry, models, config)
+make test   # unit tests (geometry, models, config, command parsing)
 make smoke  # moves a throwaway test window through real actions and prints PASS/FAIL
 ```
 
-On first launch macOS asks for **Accessibility** access (System Settings → Privacy & Security → Accessibility). Fling needs it to move other apps' windows.
+On first launch macOS asks for **Accessibility** access (System Settings → Privacy & Security → Accessibility). Fling needs it to move other apps' windows. **Float on Top** also needs **Screen Recording** (Privacy & Security → Screen & System Audio Recording); nothing else does.
 
 > Run `make cert` once first. It creates a self-signed "Fling Dev" signing certificate in your login keychain, so rebuilds keep the Accessibility grant. Without it, builds are ad-hoc signed and macOS forgets the grant after every rebuild.
 
@@ -90,17 +90,17 @@ open -g "fling://save-layout?name=Deep%20Work"          # save the current windo
 |---|---|
 | `Sources/Fling/Geometry.swift` | Actions, frame math, snap areas and throw directions (tested) |
 | `Sources/Fling/Window.swift` | Accessibility API: find windows, set frames, minimize/close/full screen; screens |
-| `Sources/Fling/Hotkeys.swift` | Shortcut model, defaults, saving, global hotkeys (Carbon) |
-| `Sources/Fling/FlingApp.swift` | SwiftUI app, URL handling, preferences, menu |
+| `Sources/Fling/Hotkeys.swift` | Shortcut model and defaults; global hotkeys (Carbon, plus the event tap for left/right-specific ones) |
+| `Sources/Fling/FlingApp.swift` | SwiftUI app, preferences, menu bar menu |
 | `Sources/Fling/AppState.swift` | Action dispatch, restore/cycling, custom positions, layouts, Pin Mode, triggers |
-| `Sources/Fling/Models.swift` | Custom position, layout and URL models (tested) |
+| `Sources/Fling/Models.swift` | Custom position, layout, display memory and URL-to-command models (tested) |
 | `Sources/Fling/Stash.swift` | Edge stashing |
 | `Sources/Fling/SnapPanel.swift` | Snap Panel tiles shown while dragging |
 | `Sources/Fling/KeyboardGrid.swift` | Lettered grid overlay for two-key placement |
 | `Sources/Fling/SnapAssist.swift` | Pick-a-window panel for the space left after snapping |
 | `Sources/Fling/DisplayMemory.swift` | Window positions remembered per display setup |
 | `Sources/Fling/Trackpad.swift` | Trackpad finger-count trigger (private MultitouchSupport) |
-| `Sources/Fling/WindowWatcher.swift` | New-window notifications for layouts |
+| `Sources/Fling/WindowWatcher.swift` | New-window notifications for layouts and display memory |
 | `Sources/Fling/ContextMenu.swift` | Pop-up action menu at the cursor |
 | `Sources/Fling/FloatingWindows.swift` | Float on Top: live ScreenCaptureKit mirrors in floating panels |
 | `Sources/Fling/CommandServer.swift`, `CommandLineInterface.swift` | flingctl's socket server and commands |
@@ -108,7 +108,11 @@ open -g "fling://save-layout?name=Deep%20Work"          # save the current windo
 | `Sources/Fling/Config.swift` | Export/import, iCloud Drive sync and the dotfile config |
 | `Sources/Fling/SmokeTest.swift`, `Tests/Smoke/` | `make smoke` live test and its test window |
 | `Sources/Fling/Gestures.swift` | Event tap: drag snapping, Window Throw, Quick Throw, move/resize, footprint overlay |
-| `Sources/Fling/SettingsView.swift` | Settings: General, Shortcuts (recorder), Mouse |
+| `Sources/Fling/SettingsView.swift` | Settings: General, Shortcuts (recorder), Mouse, Diagnostics |
 | `Sources/Fling/LayoutSettings.swift` | Settings: Custom positions and Layouts |
 | `docs/rectangle-pro-research.md` | Rectangle Pro feature research |
 | `docs/differentiation-research.md` | Competitive research and roadmap |
+
+## License
+
+MIT. See [LICENSE](LICENSE).
