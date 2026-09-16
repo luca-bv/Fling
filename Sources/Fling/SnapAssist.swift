@@ -17,6 +17,14 @@ final class SnapAssist {
     /// Panel frame and the space to fill, in Accessibility coordinates.
     private var panelFrame = CGRect.null
     private(set) var area = CGRect.null
+    /// What placed the window, so the panel can be switched off per source. Gestures set it before placing;
+    /// everything else (shortcuts, the menu, flingctl, URLs) leaves it at .shortcut. Cleared by the next offer.
+    var nextSource = Source.shortcut
+
+    enum Source: String, CaseIterable {
+        case shortcut, drag, thrown
+        var prefKey: String { "snapAssist." + rawValue }
+    }
     /// The smoke test checks the panel once, then stops it appearing for the rest of the run.
     var suppressed = false
     var isShowing: Bool { !choices.isEmpty }
@@ -33,7 +41,10 @@ final class SnapAssist {
 
     func offer(after window: Window, placedAt frame: CGRect) {
         hide()
+        let source = nextSource
+        nextSource = .shortcut
         guard !suppressed, UserDefaults.standard.bool(forKey: Prefs.snapAssist),
+              UserDefaults.standard.bool(forKey: source.prefKey),
               let area = state.freeArea(beside: frame, window: window),
               let primary = NSScreen.screens.first else { return }
         let candidates = Array(Window.visible().filter { $0.element != window.element }.prefix(Self.digitKeys.count))

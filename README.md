@@ -5,7 +5,7 @@ A lightweight macOS window manager that lives in the menu bar.
 - **Keyboard shortcuts** for halves, corners, thirds, fourths, sixths, fill, maximize, center, nudge, size, move, displays, Spaces and window controls. Repeating a half cycles ½ → ⅔ → ⅓; nudge and size repeat while held. **Win Arrow Keys** step between halves and corners like Windows.
 - **Drag to snap**: screen edges and corners (each configurable, separately for portrait displays), a **Snap Panel** of tiles, and custom **snap targets**, with footprint previews and haptics. Drag a snapped window away to restore its size; drag a shared edge to resize neighbors.
 - **Display memory**: windows go back to where they were for each display setup when you plug in or unplug a display, rearrange displays or wake the Mac, and reopened apps' windows return to their last spot. No setup needed.
-- **Snap Assist**: after snapping a window, pick another window (click or press 1–9) to fill the rest of the screen.
+- **Snap Assist**: after snapping a window, pick another window (click or press 1–9) to fill the rest of the screen. Switchable per source — keyboard shortcuts, drags and throws — and off after throws by default.
 - **Float on Top**: keep any window above the others (⌃⌥⌘P toggles). Fling shows a live mirror of the window; click it to use the real one. Needs Screen Recording permission.
 - **Keyboard grid**: press ⌃⌥⌘G, then two letters (Q W E R / A S D F / Z X C V) to span the window across those grid cells.
 - **Window Throw**: hold ⌃⌘, a mouse button, or rest 3–5 fingers on the trackpad and lift all but one; move toward one of 16 configurable positions and release.

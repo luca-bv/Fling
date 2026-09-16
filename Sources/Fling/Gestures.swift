@@ -152,7 +152,10 @@ final class Gestures {
 
         if let q = quick {
             quick = nil
-            if flags.isEmpty, now - q.time < 0.5, let window = Window.at(q.point) { state.perform(q.action, on: window) }
+            if flags.isEmpty, now - q.time < 0.5, let window = Window.at(q.point) {
+                state.snapAssist?.nextSource = .thrown
+                state.perform(q.action, on: window)
+            }
             return
         }
         guard !flags.isEmpty, throwing == nil, manipulation == nil else { return }
@@ -213,6 +216,7 @@ final class Gestures {
         footprint.hide()
         reticle.hide()
         if apply, let t = throwing, let target = t.target {
+            state.snapAssist?.nextSource = .thrown
             state.perform(target.action, on: t.window, screen: target.screen)
         }
         throwing = nil
@@ -352,6 +356,7 @@ final class Gestures {
             }
         }
         if let d = drag, let window = d.window {
+            state.snapAssist?.nextSource = .drag
             switch d.snap {
             case .action(let action, let screen): state.perform(action, on: window, screen: screen)
             case .custom(let id): state.perform(custom: id, on: window)

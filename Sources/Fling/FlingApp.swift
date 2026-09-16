@@ -78,6 +78,9 @@ enum Prefs {
             resizeWindow: false, resizeModifiers: raw([.control, .option, .shift]),
             pinEnabled: false, pinBundleID: "", pinWidth: "1/4", pinRight: true, stashColorTabs: false,
         ]
+        .merging(Dictionary(uniqueKeysWithValues: SnapAssist.Source.allCases.map {
+            ($0.prefKey, $0 != .thrown) // a throw ends with a flick; stopping to pick a window there breaks it
+        })) { a, _ in a }
         .merging(Dictionary(uniqueKeysWithValues: [false, true].flatMap { portrait in
             SnapArea.allCases.map { ($0.prefKey(portrait: portrait), $0.defaultSetting) }
         })) { a, _ in a }
