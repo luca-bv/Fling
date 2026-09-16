@@ -45,7 +45,7 @@ enum SmokeTest {
         }
         let defaults = UserDefaults.standard
         let touched = [Prefs.displayMemory, Prefs.gap, Prefs.cycleHalves, Prefs.pinEnabled, Prefs.pinBundleID, Prefs.pinWidth,
-                       Prefs.pinRight, Prefs.snapAssist]
+                       Prefs.pinRight, Prefs.throwTrackpadFingers]
         // Only values the user actually set; registered defaults read back as values too.
         let persisted = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
         let saved = touched.map { persisted[$0] }
@@ -75,9 +75,9 @@ enum SmokeTest {
         expect("snap assist offers the other half" + (othersVisible ? "" : " (skipped: no other windows)"),
                !othersVisible || (state.snapAssist?.isShowing == true
                    && state.snapAssist?.area.isClose(to: CGRect(x: s.midX, y: s.minY, width: s.width / 2, height: s.height)) == true))
-        // Checked once; keep it off the screen for the rest of the run.
+        // Checked once; keep it off the screen for the rest of the run (without touching the user's setting).
         state.snapAssist?.hide()
-        defaults.set(false, forKey: Prefs.snapAssist)
+        state.snapAssist?.suppressed = true
         await check("left half again cycles to ⅔", CGRect(x: s.minX, y: s.minY, width: s.width * 2 / 3, height: s.height)) {
             state.perform(.leftHalf, on: window)
         }
@@ -276,6 +276,17 @@ enum SmokeTest {
             : " — expected \(original), got \(String(describing: window.frame))"), window.frame?.isClose(to: original) == true)
         state.displayMemory?.forget(bundleID: bundleID)
         state.snapAssist?.hide()
+
+        // Trackpad throws: reopening the devices (as on wake) used to stop and free devices already freed,
+        // which crashed MultitouchSupport's thread. Surviving three rounds is the check.
+        defaults.set(3, forKey: Prefs.throwTrackpadFingers)
+        let trackpad = Trackpad(onStart: {}, onEnd: {})
+        for _ in 0..<3 {
+            trackpad.reconnect()
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+        expect("trackpad devices survive being reopened", true)
+        defaults.set(0, forKey: Prefs.throwTrackpadFingers)
 
         state.perform(.minimize, on: window)
         try? await Task.sleep(for: .milliseconds(800))

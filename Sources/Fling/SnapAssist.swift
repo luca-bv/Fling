@@ -17,6 +17,8 @@ final class SnapAssist {
     /// Panel frame and the space to fill, in Accessibility coordinates.
     private var panelFrame = CGRect.null
     private(set) var area = CGRect.null
+    /// The smoke test checks the panel once, then stops it appearing for the rest of the run.
+    var suppressed = false
     var isShowing: Bool { !choices.isEmpty }
 
     init(state: AppState) {
@@ -31,7 +33,8 @@ final class SnapAssist {
 
     func offer(after window: Window, placedAt frame: CGRect) {
         hide()
-        guard UserDefaults.standard.bool(forKey: Prefs.snapAssist), let area = state.freeArea(beside: frame, window: window),
+        guard !suppressed, UserDefaults.standard.bool(forKey: Prefs.snapAssist),
+              let area = state.freeArea(beside: frame, window: window),
               let primary = NSScreen.screens.first else { return }
         let candidates = Array(Window.visible().filter { $0.element != window.element }.prefix(Self.digitKeys.count))
         guard !candidates.isEmpty else { return }

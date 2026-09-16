@@ -67,7 +67,8 @@ smoke: app
 	codesign --force --sign - $(TEST_WINDOW)
 	@pkill -x FlingTestWindow; open -g -n $(TEST_WINDOW); sleep 2; log=$$(mktemp) && \
 	open -g -W -n --stdout "$$log" --stderr "$$log" $(APP) --args --smoke-test com.lucabv.Fling.TestWindow; \
-	cat "$$log"; pkill -x FlingTestWindow; ! grep -q FAIL "$$log"
+	cat "$$log"; pkill -x FlingTestWindow; \
+	grep -q "All smoke tests passed" "$$log" || { echo "make: smoke tests failed (or Fling crashed before finishing)"; exit 1; }
 
 # Links flingctl (inside the app bundle) into $(PREFIX)/bin, ~/.local/bin by default.
 install-cli: app
