@@ -72,12 +72,16 @@ enum SmokeTest {
             state.perform(.leftHalf, on: window)
         }
         let othersVisible = Window.visible().contains { $0.element != window.element }
-        expect("snap assist offers the other half" + (othersVisible ? "" : " (skipped: no other windows)"),
-               !othersVisible || (state.snapAssist?.isShowing == true
-                   && state.snapAssist?.area.isClose(to: CGRect(x: s.midX, y: s.minY, width: s.width / 2, height: s.height)) == true))
+        // Both are the user's own settings, and this runs against their Fling's preferences: say so rather than fail.
+        let offered = UserDefaults.standard.bool(forKey: Prefs.fillRest)
+            && UserDefaults.standard.bool(forKey: FillRest.Source.shortcut.prefKey)
+        let skip = !othersVisible ? " (skipped: no other windows)" : !offered ? " (skipped: switched off in Settings)" : ""
+        expect("fill the rest offers the other half" + skip,
+               !skip.isEmpty || (state.fillRest?.isShowing == true
+                   && state.fillRest?.area.isClose(to: CGRect(x: s.midX, y: s.minY, width: s.width / 2, height: s.height)) == true))
         // Checked once; keep it off the screen for the rest of the run (without touching the user's setting).
-        state.snapAssist?.hide()
-        state.snapAssist?.suppressed = true
+        state.fillRest?.hide()
+        state.fillRest?.suppressed = true
         await check("left half again cycles to ⅔", CGRect(x: s.minX, y: s.minY, width: s.width * 2 / 3, height: s.height)) {
             state.perform(.leftHalf, on: window)
         }
@@ -275,7 +279,7 @@ enum SmokeTest {
         expect("display memory puts the window back" + (window.frame?.isClose(to: original) == true ? ""
             : " — expected \(original), got \(String(describing: window.frame))"), window.frame?.isClose(to: original) == true)
         state.displayMemory?.forget(bundleID: bundleID)
-        state.snapAssist?.hide()
+        state.fillRest?.hide()
 
         // Trackpad throws: reopening the devices (as on wake) used to stop and free devices already freed,
         // which crashed MultitouchSupport's thread. Surviving three rounds is the check.

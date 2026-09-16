@@ -50,7 +50,7 @@ enum Prefs {
     static let moveCursorWithWindow = "moveCursorWithWindow", resizeAdjacent = "resizeAdjacent", adjustForDock = "adjustForDock"
     static let showMenuBarIcon = "showMenuBarIcon", contextClickModifiers = "contextClickModifiers"
     static let stashRevealDelay = "stashRevealDelay", stashRevealWithCommand = "stashRevealWithCommand"
-    static let displayMemory = "displayMemory", displayMemoryNewWindows = "displayMemoryNewWindows", snapAssist = "snapAssist"
+    static let displayMemory = "displayMemory", displayMemoryNewWindows = "displayMemoryNewWindows", fillRest = "snapAssist", fillRestHold = "fillRestHold"  // key kept from the old name (Snap Assist) so existing settings survive
     static let recordModifierSides = "recordModifierSides", floatOpacity = "floatOpacity"
     static let throwSafeArea = "throwSafeArea", throwLongDistance = "throwLongDistance"
     static let windowThrow = "windowThrow", throwModifiers = "throwModifiers", throwMouseButton = "throwMouseButton"
@@ -70,7 +70,7 @@ enum Prefs {
             gap: 0, cycleHalves: true, doubleClickTitleBar: false, snapAreas: true, snapPanel: false, snapHaptics: true,
             moveCursorWithWindow: false, resizeAdjacent: false, adjustForDock: false,
             showMenuBarIcon: true, contextClickModifiers: 0,
-            stashRevealDelay: "0", stashRevealWithCommand: false, displayMemory: true, displayMemoryNewWindows: true, snapAssist: true, recordModifierSides: false, floatOpacity: 1.0,
+            stashRevealDelay: "0", stashRevealWithCommand: false, displayMemory: true, displayMemoryNewWindows: true, fillRest: true, fillRestHold: true, recordModifierSides: false, floatOpacity: 1.0,
             throwSafeArea: 15, throwLongDistance: 150,
             windowThrow: true, throwModifiers: raw([.control, .command]), throwMouseButton: 0, throwTrackpadFingers: 0,
             quickThrow: false, quickThrowModifiers: raw([.control]),
@@ -78,7 +78,7 @@ enum Prefs {
             resizeWindow: false, resizeModifiers: raw([.control, .option, .shift]),
             pinEnabled: false, pinBundleID: "", pinWidth: "1/4", pinRight: true, stashColorTabs: false,
         ]
-        .merging(Dictionary(uniqueKeysWithValues: SnapAssist.Source.allCases.map {
+        .merging(Dictionary(uniqueKeysWithValues: FillRest.Source.allCases.map {
             ($0.prefKey, $0 != .thrown) // a throw ends with a flick; stopping to pick a window there breaks it
         })) { a, _ in a }
         .merging(Dictionary(uniqueKeysWithValues: [false, true].flatMap { portrait in

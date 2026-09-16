@@ -26,10 +26,11 @@ private struct GeneralSettings: View {
     @AppStorage(Prefs.cycleHalves) private var cycleHalves = true
     @AppStorage(Prefs.doubleClickTitleBar) private var doubleClickTitleBar = false
     @AppStorage(Prefs.moveCursorWithWindow) private var moveCursorWithWindow = false
-    @AppStorage(Prefs.snapAssist) private var snapAssist = true
-    @AppStorage(SnapAssist.Source.shortcut.prefKey) private var assistAfterShortcut = true
-    @AppStorage(SnapAssist.Source.drag.prefKey) private var assistAfterDrag = true
-    @AppStorage(SnapAssist.Source.thrown.prefKey) private var assistAfterThrow = false
+    @AppStorage(Prefs.fillRest) private var fillRest = true
+    @AppStorage(FillRest.Source.shortcut.prefKey) private var assistAfterShortcut = true
+    @AppStorage(FillRest.Source.drag.prefKey) private var assistAfterDrag = true
+    @AppStorage(FillRest.Source.thrown.prefKey) private var assistAfterThrow = false
+    @AppStorage(Prefs.fillRestHold) private var fillRestHold = true
     @AppStorage(Prefs.adjustForDock) private var adjustForDock = false
     @AppStorage(Prefs.showMenuBarIcon) private var showMenuBarIcon = true
     @AppStorage(Prefs.pinEnabled) private var pinEnabled = false
@@ -94,14 +95,17 @@ private struct GeneralSettings: View {
             Section {
                 Stepper("Gaps between windows: \(gap) px", value: $gap, in: 0...60, step: 2)
                 Toggle("Repeating a half action cycles ½ → ⅔ → ⅓", isOn: $cycleHalves)
-                Toggle("Snap Assist: after snapping, pick a window to fill the rest", isOn: $snapAssist)
+                Toggle("Fill the Rest: after snapping, pick a window to fill the rest", isOn: $fillRest)
                 Group {
                     Toggle("…after a keyboard shortcut", isOn: $assistAfterShortcut)
+                    Toggle("…and then only while that shortcut's keys are held", isOn: $fillRestHold)
+                        .padding(.leading, 18)
+                        .disabled(!assistAfterShortcut)
                     Toggle("…after dragging to an edge or a snap target", isOn: $assistAfterDrag)
                     Toggle("…after a throw", isOn: $assistAfterThrow)
                 }
                 .padding(.leading, 18)
-                .disabled(!snapAssist)
+                .disabled(!fillRest)
                 Toggle("Double-click a title bar to maximize or restore", isOn: $doubleClickTitleBar)
                 Toggle("Move the cursor with a window sent to another display", isOn: $moveCursorWithWindow)
                 Toggle("Adjust windows when the Dock is shown, hidden or moved", isOn: $adjustForDock)

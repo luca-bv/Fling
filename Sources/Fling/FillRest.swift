@@ -1,10 +1,12 @@
 import AppKit
 
-/// Snap Assist, as on Windows: after a window snaps to part of the screen, a panel in the empty space lists the
-/// other windows; click one (or press its number) to fill that space. Esc, a click elsewhere or any other key dismisses it.
+/// Fill the Rest: after a window snaps to part of the screen, a panel in the empty space lists the other windows;
+/// click one (or press its number) to fill that space. Esc, a click elsewhere or any other key dismisses it.
+/// With "hold to see" on, a shortcut's panel lasts only while that shortcut's modifiers stay down, so snapping
+/// with the keyboard and moving on costs nothing.
 /// Shows app icons and titles rather than thumbnails, so no Screen Recording permission is needed.
 @MainActor
-final class SnapAssist {
+final class FillRest {
     private static let width: CGFloat = 340, header: CGFloat = 38, rowHeight: CGFloat = 34, padding: CGFloat = 8
     /// ANSI key codes for 1–9.
     private static let digitKeys = [18, 19, 20, 21, 23, 22, 26, 28, 25]
@@ -23,8 +25,10 @@ final class SnapAssist {
 
     enum Source: String, CaseIterable {
         case shortcut, drag, thrown
-        var prefKey: String { "snapAssist." + rawValue }
+        var prefKey: String { "snapAssist." + rawValue } // old name, kept so existing settings survive
     }
+    /// The modifiers held when the window snapped, empty unless hold-to-see is on. Releasing them hides the panel.
+    private var held: NSEvent.ModifierFlags = []
     /// The smoke test checks the panel once, then stops it appearing for the rest of the run.
     var suppressed = false
     var isShowing: Bool { !choices.isEmpty }
@@ -43,12 +47,15 @@ final class SnapAssist {
         hide()
         let source = nextSource
         nextSource = .shortcut
-        guard !suppressed, UserDefaults.standard.bool(forKey: Prefs.snapAssist),
+        guard !suppressed, UserDefaults.standard.bool(forKey: Prefs.fillRest),
               UserDefaults.standard.bool(forKey: source.prefKey),
               let area = state.freeArea(beside: frame, window: window),
               let primary = NSScreen.screens.first else { return }
         let candidates = Array(Window.visible().filter { $0.element != window.element }.prefix(Self.digitKeys.count))
         guard !candidates.isEmpty else { return }
+        // Hold to see it: only for shortcuts, where keys are still down. A drag or a throw has none to hold.
+        held = source == .shortcut && UserDefaults.standard.bool(forKey: Prefs.fillRestHold)
+            ? NSEvent.modifierFlags.intersection(Prefs.modifierMask) : []
 
         let height = Self.header + CGFloat(candidates.count) * Self.rowHeight + Self.padding
         let size = CGSize(width: min(Self.width, area.width - 20), height: min(height, area.height - 20))
@@ -67,6 +74,13 @@ final class SnapAssist {
         guard isShowing else { return }
         panel.orderOut(nil)
         choices = []
+        held = []
+    }
+
+    /// Hold to see it: the panel lasts as long as the modifiers that placed the window stay down.
+    func flagsChanged(_ flags: NSEvent.ModifierFlags) {
+        guard isShowing, !held.isEmpty, !flags.contains(held) else { return }
+        hide()
     }
 
     /// Returns true when the key was used (and should be swallowed); any other key dismisses the panel.
@@ -76,7 +90,10 @@ final class SnapAssist {
             hide()
             return true
         }
-        if modifiers.isEmpty, let index = Self.digitKeys.firstIndex(of: keyCode), index < choices.count {
+        // 1-9 pick a window, with the trigger modifiers still down or after they are released. Fling's tap is at
+        // the head of the session tap, so this claims e.g. ⌃⌥1 before the First Fourth hotkey sees it.
+        if modifiers.isEmpty || (!held.isEmpty && modifiers.contains(held)),
+           let index = Self.digitKeys.firstIndex(of: keyCode), index < choices.count {
             choose(index)
             return true
         }
@@ -113,7 +130,7 @@ final class SnapAssist {
     private func choose(_ index: Int) {
         let window = choices[index], target = area
         hide()
-        state.place(window, at: target, key: "snapAssist")
+        state.place(window, at: target, key: "fillRest")
         window.raise()
     }
 
@@ -128,14 +145,15 @@ final class SnapAssist {
 
         let header = NSTextField(labelWithString: title)
         header.font = .systemFont(ofSize: 13, weight: .semibold)
-        header.frame = CGRect(x: 14, y: size.height - Self.header + 10, width: size.width - 70, height: 18)
+        header.frame = CGRect(x: 14, y: size.height - Self.header + 10, width: size.width - 120, height: 18)
         background.addSubview(header)
-        let escape = NSTextField(labelWithString: "esc")
-        escape.font = .systemFont(ofSize: 11)
-        escape.textColor = .tertiaryLabelColor
-        escape.alignment = .right
-        escape.frame = CGRect(x: size.width - 54, y: size.height - Self.header + 11, width: 40, height: 16)
-        background.addSubview(escape)
+        // Held: say which keys are keeping the panel up. Otherwise: how to dismiss it.
+        let hint = NSTextField(labelWithString: held.isEmpty ? "esc" : "hold \(modifierSymbols(held))")
+        hint.font = .systemFont(ofSize: 11)
+        hint.textColor = .tertiaryLabelColor
+        hint.alignment = .right
+        hint.frame = CGRect(x: size.width - 104, y: size.height - Self.header + 11, width: 90, height: 16)
+        background.addSubview(hint)
 
         let highlight = NSView(frame: CGRect(x: 6, y: 0, width: size.width - 12, height: Self.rowHeight))
         highlight.wantsLayer = true

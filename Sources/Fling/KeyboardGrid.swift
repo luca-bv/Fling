@@ -56,7 +56,7 @@ final class KeyboardGrid {
         let frame = KeyGrid.frame(from: first, to: cell, in: target.area, gap: gap)
         state.place(target.window, at: frame, key: "keyboardGrid")
         hide()
-        state.snapAssist?.offer(after: target.window, placedAt: frame)
+        state.fillRest?.offer(after: target.window, placedAt: frame)
         return true
     }
 

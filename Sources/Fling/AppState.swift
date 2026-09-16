@@ -34,7 +34,7 @@ final class AppState {
     @ObservationIgnored private var windowWatcher: WindowWatcher?
     @ObservationIgnored private(set) var contextMenu: ContextMenu?
     @ObservationIgnored private(set) var keyboardGrid: KeyboardGrid?
-    @ObservationIgnored private(set) var snapAssist: SnapAssist?
+    @ObservationIgnored private(set) var fillRest: FillRest?
     @ObservationIgnored private(set) var floating: FloatingWindows?
     @ObservationIgnored private var commandServer: CommandServer?
     /// Recent placements and failures, newest last, shown in Settings → Diagnostics.
@@ -67,7 +67,7 @@ final class AppState {
         windowWatcher = WindowWatcher { [weak self] in self?.windowOpened($0) }
         contextMenu = ContextMenu(state: self)
         keyboardGrid = KeyboardGrid(state: self)
-        snapAssist = SnapAssist(state: self)
+        fillRest = FillRest(state: self)
         floating = FloatingWindows(state: self)
         commandServer = CommandServer { [weak self] args, cwd in
             self?.runCommand(args, workingDirectory: cwd) ?? (false, "Fling is quitting.")
@@ -215,7 +215,7 @@ final class AppState {
         place(window, from: frame, to: target, key: action.rawValue, count: count, rememberRestore: action != .restore)
         lastPlacement[window.element] = action.placesWindow ? action : nil
         if [.halves, .corners, .thirds, .fourths, .sixths, .fill].contains(action.category) {
-            snapAssist?.offer(after: window, placedAt: target)
+            fillRest?.offer(after: window, placedAt: target)
         }
 
         // Keyboard and menu commands that send a window to another display bring the cursor along.
@@ -359,10 +359,10 @@ final class AppState {
         lastPlacement[window.element] = nil
     }
 
-    /// Snap Assist's space to fill beside a placed window, on that window's screen.
+    /// Fill the Rest's space to fill beside a placed window, on that window's screen.
     func freeArea(beside frame: CGRect, window: Window) -> CGRect? {
         let gap = CGFloat(UserDefaults.standard.integer(forKey: Prefs.gap))
-        return usableArea(for: window, frame: frame).flatMap { snapAssistArea(placed: frame, in: $0, gap: gap) }
+        return usableArea(for: window, frame: frame).flatMap { fillRestArea(placed: frame, in: $0, gap: gap) }
     }
 
     /// The usable area of the screen a window is on (Pin Mode's strip excluded).

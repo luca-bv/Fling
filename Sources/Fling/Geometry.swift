@@ -153,9 +153,9 @@ enum Action: String, CaseIterable, Codable {
     }
 }
 
-/// Snap Assist: the biggest empty strip beside a snapped window (left, right, above or below; ties favor
+/// Fill the Rest: the biggest empty strip beside a snapped window (left, right, above or below; ties favor
 /// left/right), or nil if it's under 15% of the screen. With gaps, the strip keeps a full gap on every side.
-func snapAssistArea(placed f: CGRect, in s: CGRect, gap: CGFloat = 0) -> CGRect? {
+func fillRestArea(placed f: CGRect, in s: CGRect, gap: CGFloat = 0) -> CGRect? {
     let area = s.insetBy(dx: gap / 2, dy: gap / 2), placed = f.insetBy(dx: -gap / 2, dy: -gap / 2)
     let strips = [
         CGRect(x: area.minX, y: area.minY, width: placed.minX - area.minX, height: area.height),

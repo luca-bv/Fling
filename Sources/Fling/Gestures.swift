@@ -89,7 +89,9 @@ final class Gestures {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
         case .flagsChanged:
-            flagsChanged(NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)).intersection(Prefs.modifierMask), at: p)
+            let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)).intersection(Prefs.modifierMask)
+            flagsChanged(flags, at: p)
+            state.fillRest?.flagsChanged(flags)
         case .mouseMoved:
             let now = ProcessInfo.processInfo.systemUptime
             trail.append((now, p))
@@ -97,13 +99,13 @@ final class Gestures {
             throwMoved(to: p)
             manipulate(to: p)
             state.stash.mouseMoved(to: p)
-            state.snapAssist?.mouseMoved(to: p)
+            state.fillRest?.mouseMoved(to: p)
             state.keyboardGrid?.mouseMoved(to: p)
         case .keyDown where state.keyboardGrid?.isShowing == true:
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return false }
             return state.keyboardGrid?.handleKey(Int(event.getIntegerValueField(.keyboardEventKeycode))) != true
         case .leftMouseDown, .keyDown:
-            if let assist = state.snapAssist, assist.isShowing {
+            if let assist = state.fillRest, assist.isShowing {
                 let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)).intersection(Prefs.modifierMask)
                 let used = type == .keyDown
                     ? assist.handleKey(Int(event.getIntegerValueField(.keyboardEventKeycode)), modifiers: flags)
@@ -153,7 +155,7 @@ final class Gestures {
         if let q = quick {
             quick = nil
             if flags.isEmpty, now - q.time < 0.5, let window = Window.at(q.point) {
-                state.snapAssist?.nextSource = .thrown
+                state.fillRest?.nextSource = .thrown
                 state.perform(q.action, on: window)
             }
             return
@@ -216,7 +218,7 @@ final class Gestures {
         footprint.hide()
         reticle.hide()
         if apply, let t = throwing, let target = t.target {
-            state.snapAssist?.nextSource = .thrown
+            state.fillRest?.nextSource = .thrown
             state.perform(target.action, on: t.window, screen: target.screen)
         }
         throwing = nil
@@ -356,7 +358,7 @@ final class Gestures {
             }
         }
         if let d = drag, let window = d.window {
-            state.snapAssist?.nextSource = .drag
+            state.fillRest?.nextSource = .drag
             switch d.snap {
             case .action(let action, let screen): state.perform(action, on: window, screen: screen)
             case .custom(let id): state.perform(custom: id, on: window)
