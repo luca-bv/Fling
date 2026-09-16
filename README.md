@@ -22,6 +22,20 @@ A lightweight macOS window manager that lives in the menu bar.
 
 Requires macOS 14+.
 
+## Install
+
+```sh
+git clone https://github.com/luca-bv/Fling.git && cd Fling && ./install.sh
+```
+
+Builds from source and puts Fling in `/Applications`, signed with the local "Fling Dev" certificate
+(`make cert`, created on first run) so the Accessibility grant survives updates. Then allow Fling in
+System Settings → Privacy & Security → Accessibility.
+
+To update, run `./install.sh` again — from a clone it builds what you have checked out; run from
+anywhere else it keeps its own clone in `~/.local/share/Fling` and pulls before building.
+Needs the Swift toolchain (`xcode-select --install`). `DEST=~/Applications ./install.sh` installs elsewhere.
+
 ## Build & run
 
 ```sh
@@ -151,6 +165,8 @@ open -g "fling://save-layout?name=Deep%20Work"          # save the current windo
 | `Sources/Fling/Gestures.swift` | Event tap: drag snapping, Window Throw, Quick Throw, move/resize, footprint overlay |
 | `Sources/Fling/SettingsView.swift` | Settings: General, Shortcuts (recorder), Mouse, Diagnostics |
 | `Sources/Fling/LayoutSettings.swift` | Settings: Custom positions and Layouts |
+| `install.sh` | Build-from-source installer into `/Applications` |
+| `release/Read Me First.txt` | Install steps shipped inside the disk image |
 | `docs/rectangle-pro-research.md` | Rectangle Pro feature research |
 | `docs/differentiation-research.md` | Competitive research and roadmap |
 
