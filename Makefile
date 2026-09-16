@@ -54,7 +54,8 @@ test:
 	else swift test; fi
 
 # Runs real window actions through the Accessibility API against a throwaway test window and prints PASS/FAIL.
-# Quits the running Fling first (its hotkeys would clash) and relaunches it afterwards.
+# Runs beside the Fling you already have open: --smoke-test takes no hotkeys or event tap and uses its own
+# socket, and both apps launch in the background (-g) so nothing steals focus while you work.
 TEST_WINDOW := build/FlingTestWindow.app
 smoke: app
 	rm -rf $(TEST_WINDOW) && mkdir -p $(TEST_WINDOW)/Contents/MacOS
@@ -64,9 +65,9 @@ smoke: app
 		'<key>CFBundleExecutable</key><string>FlingTestWindow</string>' \
 		'<key>CFBundlePackageType</key><string>APPL</string></dict></plist>' > $(TEST_WINDOW)/Contents/Info.plist
 	codesign --force --sign - $(TEST_WINDOW)
-	@pkill -x Fling; pkill -x FlingTestWindow; open -n $(TEST_WINDOW); sleep 2; log=$$(mktemp) && \
-	open -W -n --stdout "$$log" --stderr "$$log" $(APP) --args --smoke-test com.lucabv.Fling.TestWindow; \
-	cat "$$log"; pkill -x FlingTestWindow; open $(APP); ! grep -q FAIL "$$log"
+	@pkill -x FlingTestWindow; open -g -n $(TEST_WINDOW); sleep 2; log=$$(mktemp) && \
+	open -g -W -n --stdout "$$log" --stderr "$$log" $(APP) --args --smoke-test com.lucabv.Fling.TestWindow; \
+	cat "$$log"; pkill -x FlingTestWindow; ! grep -q FAIL "$$log"
 
 # Links flingctl (inside the app bundle) into $(PREFIX)/bin, ~/.local/bin by default.
 install-cli: app

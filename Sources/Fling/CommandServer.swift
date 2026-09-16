@@ -4,8 +4,11 @@ import Foundation
 /// connection and answers `{"ok": Bool, "output": String}`.
 @MainActor
 final class CommandServer {
-    static let socketPath = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: "Library/Application Support/Fling/fling.sock").path
+    static let socketPath: String = {
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Application Support/Fling/fling.sock").path
+        return smokeTesting ? path + ".smoke" : path
+    }()
 
     private let handler: (_ args: [String], _ cwd: String) -> (ok: Bool, output: String)
     private var listener: Int32 = -1

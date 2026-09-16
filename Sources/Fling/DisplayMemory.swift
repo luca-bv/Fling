@@ -34,13 +34,14 @@ final class DisplayMemory {
     }
 
     /// Displays changed or the Mac woke: put windows back for the configuration now in use.
-    func restore(after delay: Double) {
+    /// `only` limits the restore to one app (the smoke test uses it to leave every other window alone).
+    func restore(after delay: Double, only bundleID: String? = nil) {
         guard enabled else { return }
         pausedUntil = Date().addingTimeInterval(delay + 3)
         pendingSnapshot?.cancel()
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay)) // let macOS finish moving windows around first
-            self?.restoreNow()
+            self?.restoreNow(only: bundleID)
         }
     }
 
@@ -82,10 +83,11 @@ final class DisplayMemory {
         }
     }
 
-    private func restoreNow() {
+    private func restoreNow(only: String? = nil) {
         guard let configuration = memory.configurations[DisplayMemoryStore.key(for: Screen.all())] else { return }
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && !app.isHidden {
-            guard let bundleID = app.bundleIdentifier, let records = configuration.apps[bundleID] else { continue }
+            guard let bundleID = app.bundleIdentifier, only == nil || only == bundleID,
+                  let records = configuration.apps[bundleID] else { continue }
             let windows = Window.all(of: app.processIdentifier)
             for (index, frame) in DisplayMemoryStore.placements(records: records, titles: windows.map(\.title)) {
                 guard let current = windows[index].frame, !current.isClose(to: frame), onScreen(frame) else { continue }

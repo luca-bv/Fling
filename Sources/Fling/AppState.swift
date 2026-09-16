@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+/// True when this process is `Fling --smoke-test …`: a second instance running beside the user's own, so it
+/// takes no hotkeys, no event tap and no config files, and serves flingctl on its own socket.
+let smokeTesting = CommandLine.arguments.contains("--smoke-test")
+
 @MainActor @Observable
 final class AppState {
     var shortcuts: [Action: Shortcut] {
@@ -54,10 +58,12 @@ final class AppState {
             UserDefaults.standard.removeObject(forKey: "shortcuts")
         }
         registerHotkeys()
-        gestures = Gestures(state: self)
         observeTriggers()
-        cloudSync = ConfigFileSync(state: self, url: ConfigFileSync.iCloudURL, enabledKey: Prefs.iCloudSync, pollInterval: 30)
-        configFile = ConfigFileSync(state: self, url: ConfigFileSync.dotfileURL, enabledKey: Prefs.configFile, pollInterval: 2)
+        if !smokeTesting {
+            gestures = Gestures(state: self)
+            cloudSync = ConfigFileSync(state: self, url: ConfigFileSync.iCloudURL, enabledKey: Prefs.iCloudSync, pollInterval: 30)
+            configFile = ConfigFileSync(state: self, url: ConfigFileSync.dotfileURL, enabledKey: Prefs.configFile, pollInterval: 2)
+        }
         windowWatcher = WindowWatcher { [weak self] in self?.windowOpened($0) }
         contextMenu = ContextMenu(state: self)
         keyboardGrid = KeyboardGrid(state: self)
@@ -131,6 +137,7 @@ final class AppState {
     }
 
     private func registerHotkeys() {
+        guard !smokeTesting else { return } // the user's own Fling keeps the shortcuts during a smoke test
         Hotkeys.unregisterAll()
         guard !capturingKeys else { return }
         for (action, shortcut) in shortcuts {

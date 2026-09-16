@@ -19,6 +19,8 @@ enum SmokeTest {
         let process = Process()
         process.executableURL = url
         process.arguments = arguments
+        // Talk to this instance, not the user's own Fling.
+        process.environment = ProcessInfo.processInfo.environment.merging(["FLING_SOCKET": CommandServer.socketPath]) { _, new in new }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -42,7 +44,8 @@ enum SmokeTest {
             return false
         }
         let defaults = UserDefaults.standard
-        let touched = [Prefs.displayMemory, Prefs.gap, Prefs.cycleHalves, Prefs.pinEnabled, Prefs.pinBundleID, Prefs.pinWidth, Prefs.pinRight]
+        let touched = [Prefs.displayMemory, Prefs.gap, Prefs.cycleHalves, Prefs.pinEnabled, Prefs.pinBundleID, Prefs.pinWidth,
+                       Prefs.pinRight, Prefs.snapAssist]
         // Only values the user actually set; registered defaults read back as values too.
         let persisted = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
         let saved = touched.map { persisted[$0] }
@@ -72,6 +75,9 @@ enum SmokeTest {
         expect("snap assist offers the other half" + (othersVisible ? "" : " (skipped: no other windows)"),
                !othersVisible || (state.snapAssist?.isShowing == true
                    && state.snapAssist?.area.isClose(to: CGRect(x: s.midX, y: s.minY, width: s.width / 2, height: s.height)) == true))
+        // Checked once; keep it off the screen for the rest of the run.
+        state.snapAssist?.hide()
+        defaults.set(false, forKey: Prefs.snapAssist)
         await check("left half again cycles to ⅔", CGRect(x: s.minX, y: s.minY, width: s.width * 2 / 3, height: s.height)) {
             state.perform(.leftHalf, on: window)
         }
@@ -264,7 +270,7 @@ enum SmokeTest {
         try? await Task.sleep(for: .milliseconds(300))
         state.displayMemory?.snapshot()
         window.setFrame(CGRect(x: s.minX, y: s.minY, width: 400, height: 300))
-        state.displayMemory?.restore(after: 0)
+        state.displayMemory?.restore(after: 0, only: bundleID)
         try? await Task.sleep(for: .milliseconds(800))
         expect("display memory puts the window back" + (window.frame?.isClose(to: original) == true ? ""
             : " — expected \(original), got \(String(describing: window.frame))"), window.frame?.isClose(to: original) == true)

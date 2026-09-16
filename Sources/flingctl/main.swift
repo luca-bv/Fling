@@ -2,9 +2,10 @@
 // All commands are parsed and run inside Fling (see Sources/Fling/CommandLineInterface.swift); run `flingctl help`.
 import Foundation
 
-// Must match CommandServer.socketPath in the app.
-let socketPath = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: "Library/Application Support/Fling/fling.sock").path
+// Must match CommandServer.socketPath in the app. FLING_SOCKET picks another one (the smoke test's instance).
+let socketPath = ProcessInfo.processInfo.environment["FLING_SOCKET"]
+    ?? FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/Fling/fling.sock").path
 
 func connectToFling() -> Int32? {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)

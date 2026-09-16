@@ -32,7 +32,8 @@ final class WindowWatcher {
 
     private func watch(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
-        guard app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil else { return }
+        guard app.activationPolicy == .regular, pid != getpid(), observers[pid] == nil,
+              smokeTesting || app.bundleIdentifier != smokeTestBundleID else { return }
         var created: AXObserver?
         let callback: AXObserverCallback = { _, element, _, refcon in
             let watcher = Unmanaged<WindowWatcher>.fromOpaque(refcon!).takeUnretainedValue()

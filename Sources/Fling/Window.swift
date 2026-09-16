@@ -1,6 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
 
+/// The throwaway app `make smoke` drives. Only the smoke-test instance touches its windows; the Fling you run
+/// every day ignores them, so the two don't fight over the same window during a test.
+let smokeTestBundleID = "com.lucabv.Fling.TestWindow"
+
 /// A window of another app, via the Accessibility API.
 struct Window {
     let element: AXUIElement
@@ -43,8 +47,10 @@ struct Window {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         var candidates: [pid_t: [Window]] = [:]
         var result: [Window] = []
+        let ignored = smokeTesting ? [] : NSRunningApplication.runningApplications(withBundleIdentifier: smokeTestBundleID)
+            .map(\.processIdentifier)
         for entry in info where (entry[kCGWindowLayer as String] as? Int) == 0 {
-            guard let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != getpid(),
+            guard let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != getpid(), !ignored.contains(pid),
                   let dict = entry[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
             if candidates[pid] == nil { candidates[pid] = all(of: pid) }
