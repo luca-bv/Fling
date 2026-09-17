@@ -7,8 +7,8 @@
 <p align="center">
   <b>A lightweight macOS window manager that lives in the menu bar.</b><br>
   <br>
-  Keyboard shortcuts, drag to snap, window throwing, layouts and display memory,<br>
-  scriptable from the command line and URLs — all native, all free.
+  Place windows with the keyboard, drag or throw them into place, save layouts,<br>
+  and script all of it from the command line or a URL. Native Swift, free and MIT licensed.
 </p>
 
 <p align="center">
@@ -19,12 +19,12 @@
 
 ### Why Fling?
 
-- **Every placement on a key** — halves, corners, thirds, fourths, sixths and more, on shortcuts that match Rectangle's, so there's nothing to relearn.
-- **Drag, snap or throw** — drop windows on screen edges and a Snap Panel, or fling them toward one of 16 positions with a mouse button or trackpad gesture.
-- **Windows remember where they go** — plug in a display, wake the Mac or reopen an app, and windows return to their spot. No setup needed.
-- **Layouts for your whole desk** — arrange every app at once by shortcut, URL, display change, wake or Focus mode, and undo it in one step.
-- **Scriptable** — `flingctl` and `fling://` URLs drive everything from scripts, Shortcuts, Raycast, Alfred or a Stream Deck.
-- **Lightweight and native** — lives in your menu bar, built with Swift. Requires macOS 14+.
+- **Rectangle's shortcuts, and more.** Halves, corners, thirds, fourths and sixths use the same keys as Rectangle, so switching costs you nothing.
+- **Drag, snap or throw.** Drop a window on a screen edge or the Snap Panel, or hold a mouse button (or rest fingers on the trackpad) and flick it toward one of 16 positions.
+- **Windows go back where they were.** Unplug a monitor, wake the Mac or reopen an app, and its windows return to their last spot without any setup.
+- **Layouts you can undo.** One layout can arrange every app you have open. Run it from a shortcut, a URL, a display change, wake or a Focus mode, and put everything back with Undo Layout.
+- **Scriptable.** `flingctl` and `fling://` URLs work from shell scripts, Shortcuts, Raycast, Alfred or a Stream Deck.
+- **Small and native.** It's a Swift menu bar app for macOS 14 and later.
 
 ---
 
@@ -44,7 +44,7 @@ Builds from source and puts Fling in `/Applications`, signed with the local "Fli
 
 ## Quick Start
 
-1. Launch Fling — it appears in your menu bar
+1. Launch Fling. Its icon appears in the menu bar
 2. Allow it in System Settings → Privacy & Security → **Accessibility** (needed to move other apps' windows)
 3. Press `⌃⌥ ←` to snap a window to the left half, press it again to cycle ½ → ⅔ → ⅓
 4. Open **Settings** (`⌘,` from the menu) to assign more shortcuts and tune drag, throw and layouts
@@ -60,34 +60,34 @@ Builds from source and puts Fling in `/Applications`, signed with the local "Fli
 <summary><b>All Features</b></summary>
 
 ### Keyboard
-- **Shortcuts** — halves, corners, thirds, fourths, sixths, fill, maximize, center, nudge, size, move, displays, Spaces and window controls
-- **Repeat to cycle** — repeating a half cycles ½ → ⅔ → ⅓; nudge and size repeat while held
-- **Win Arrow Keys** — step between halves and corners like Windows
-- **Keyboard Grid** — press `⌃⌥⌘G`, then two letters (`Q W E R` / `A S D F` / `Z X C V`) to span the window across those grid cells
-- **Left/right-specific shortcuts** — e.g. right ⌘ + arrows, recorded from Settings → Shortcuts
+- **Shortcuts**: halves, corners, thirds, fourths, sixths, fill, maximize, center, nudge, size, move, displays, Spaces and window controls
+- **Repeat to cycle**: repeating a half cycles ½ → ⅔ → ⅓; nudge and size repeat while held
+- **Win Arrow Keys**: step between halves and corners like Windows
+- **Keyboard Grid**: press `⌃⌥⌘G`, then two letters (`Q W E R` / `A S D F` / `Z X C V`) to span the window across those grid cells
+- **Left/right-specific shortcuts**: e.g. right ⌘ + arrows, recorded from Settings → Shortcuts
 
 ### Mouse & Trackpad
-- **Drag to snap** — screen edges and corners, each configurable, separately for portrait displays, with footprint previews and haptics
-- **Snap Panel** — a panel of tiles to drop windows on, plus custom **snap targets**
-- **Drag to restore** — drag a snapped window away to restore its size
-- **Resize neighbors** — drag a shared edge to resize the windows on both sides
-- **Window Throw** — hold `⌃⌘`, a mouse button, or rest 3–5 fingers on the trackpad and lift all but one; move toward one of 16 configurable positions and release
-- **Quick Throw** — tap a modifier while moving the cursor to throw the window the way you were heading
+- **Drag to snap**: screen edges and corners, each configurable, separately for portrait displays, with footprint previews and haptics
+- **Snap Panel**: a panel of tiles to drop windows on, plus custom **snap targets**
+- **Drag to restore**: drag a snapped window away to restore its size
+- **Resize neighbors**: drag a shared edge to resize the windows on both sides
+- **Window Throw**: hold `⌃⌘`, a mouse button, or rest 3–5 fingers on the trackpad and lift all but one; move toward one of 16 configurable positions and release
+- **Quick Throw**: tap a modifier while moving the cursor to throw the window the way you were heading
 - **Move/resize by holding modifiers**
 - **Double-click title bar** to maximize
 
 ### Filling the Screen
-- **Fill the Rest** — after snapping a window, pick another window (click or press 1–9) for the space left over. Switchable per source — keyboard shortcuts, drags and throws — off after throws by default, and after a shortcut it shows only while you keep those keys held, so it never interrupts
-- **Multiple windows** — 2×2 and 2×3 tiles, cascade, app halves
-- **Pin Mode** — keeps one app in a strip; everything else fills the rest
-- **Stash** — tuck windows at the screen edge, with color tabs, delay and ⌘-only; Stash All, Toggle and Cycle
-- **Float on Top** — keep any window above the others (`⌃⌥⌘P` toggles). Fling shows a live mirror of the window; click it to use the real one. Needs Screen Recording permission
+- **Fill the Rest**: after snapping a window, pick another window (click or press 1–9) for the space left over. You can turn it on or off separately for shortcuts, drags and throws (it's off for throws by default). After a shortcut, it only shows while you keep the keys held, so it stays out of your way
+- **Multiple windows**: 2×2 and 2×3 tiles, cascade, app halves
+- **Pin Mode**: keeps one app in a strip; everything else fills the rest
+- **Stash**: tuck windows at the screen edge, with color tabs, delay and ⌘-only; Stash All, Toggle and Cycle
+- **Float on Top**: keep any window above the others (`⌃⌥⌘P` toggles). Fling shows a live mirror of the window; click it to use the real one. Needs Screen Recording permission
 
 ### Custom Positions & Layouts
-- **Custom positions** — fractions or points, repeat cycles, per-display
-- **Layouts** — arrange all your apps by shortcut, URL, display connect/disconnect, wake, or as windows open
-- **Undo Layout** — running a layout records where every window was first, so Undo Layout puts them all back, including the layouts that run by themselves on wake or a display change
-- **Per-layout behavior** — snap everything back as soon as you move a window by hand, or let its own shortcut undo it
+- **Custom positions**: fractions or points, repeat cycles, per-display
+- **Layouts**: arrange all your apps by shortcut, URL, display connect/disconnect, wake, or as windows open
+- **Undo Layout**: running a layout records where every window was first, so Undo Layout puts them all back, including the layouts that run by themselves on wake or a display change
+- **Per-layout behavior**: snap everything back as soon as you move a window by hand, or let its own shortcut undo it
 
 ### Display Memory
 - Windows go back to where they were for each display setup when you plug in or unplug a display, rearrange displays or wake the Mac
@@ -98,9 +98,9 @@ Builds from source and puts Fling in `/Applications`, signed with the local "Fli
 - **Gaps** and **Dock-aware resizing**
 - **Context menu at the cursor** (`⌃⌥⌘M`)
 - **Hideable menu bar icon** and **launch at login**
-- **Configuration** — export/import as JSON, iCloud Drive sync, and an optional `~/.config/fling/config.json` that Fling keeps up to date and reloads when you edit it (dotfiles-friendly)
-- **Diagnostics** — Settings → Diagnostics lists recent actions and explains why a window didn't move (fixed-size window, unresponsive app, missing permission), with a copyable report
-- **Command line and URLs** — `flingctl` and `fling://` URLs run actions, custom positions and layouts from scripts, Shortcuts and launchers
+- **Configuration**: export/import as JSON, iCloud Drive sync, and an optional `~/.config/fling/config.json` that Fling keeps up to date and reloads when you edit it (dotfiles-friendly)
+- **Diagnostics**: Settings → Diagnostics lists recent actions and explains why a window didn't move (fixed-size window, unresponsive app, missing permission), with a copyable report
+- **Command line and URLs**: `flingctl` and `fling://` URLs run actions, custom positions and layouts from scripts, Shortcuts and launchers
 
 </details>
 
@@ -225,9 +225,9 @@ make dmg VERSION=0.2.0   # → build/Fling-0.2.0.dmg
 
 The disk image holds a universal app (Apple Silicon and Intel) signed with the "Fling Dev" certificate, an Applications shortcut, and `Read Me First.txt` with install steps for testers.
 
-- **Not notarized** — on testers' Macs, Gatekeeper blocks the first launch. They allow it once in System Settings → Privacy & Security → **Open Anyway** (steps are in the read-me). Notarization needs an Apple Developer ID ($99/year).
-- **Always sign releases with the same certificate** — macOS ties the Accessibility grant to it, so testers keep their permission across updates. `make dmg` refuses to build ad-hoc. Back up the certificate: in Keychain Access, export "Fling Dev" (certificate and private key) as a .p12. A new certificate means every tester re-grants Accessibility.
-- **Versioning** — bump `VERSION` for each release. The build number is the commit count.
+- **Not notarized**: on testers' Macs, Gatekeeper blocks the first launch. They allow it once in System Settings → Privacy & Security → **Open Anyway** (steps are in the read-me). Notarization needs an Apple Developer ID ($99/year).
+- **Always sign releases with the same certificate**: macOS ties the Accessibility grant to it, so testers keep their permission across updates. `make dmg` refuses to build ad-hoc. Back up the certificate: in Keychain Access, export "Fling Dev" (certificate and private key) as a .p12. A new certificate means every tester re-grants Accessibility.
+- **Versioning**: bump `VERSION` for each release. The build number is the commit count.
 
 </details>
 
