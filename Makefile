@@ -25,7 +25,8 @@ ifeq ($(UNIVERSAL),1)
 else
 	swift build -c release
 endif
-	rm -rf $(APP) && mkdir -p $(APP)/Contents/MacOS
+	rm -rf $(APP) && mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
+	cp assets/AppIcon.icns $(APP)/Contents/Resources/
 	cp $(BIN)/Fling $(BIN)/flingctl $(APP)/Contents/MacOS/
 	printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
 		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
@@ -33,6 +34,7 @@ endif
 		'<key>CFBundleIdentifier</key><string>com.lucabv.Fling</string>' \
 		'<key>CFBundleName</key><string>Fling</string>' \
 		'<key>CFBundleExecutable</key><string>Fling</string>' \
+		'<key>CFBundleIconFile</key><string>AppIcon</string>' \
 		'<key>CFBundlePackageType</key><string>APPL</string>' \
 		'<key>CFBundleShortVersionString</key><string>$(VERSION)</string>' \
 		'<key>CFBundleVersion</key><string>$(BUILD_NUMBER)</string>' \

@@ -258,6 +258,7 @@ The disk image holds a universal app (Apple Silicon and Intel) signed with the "
 | `Sources/Fling/CommandServer.swift`, `CommandLineInterface.swift` | flingctl's socket server and commands |
 | `Sources/flingctl/main.swift` | The `flingctl` client |
 | `Sources/Fling/SmokeTest.swift`, `Tests/Smoke/` | `make smoke` live test and its test window |
+| `assets/logo.svg`, `assets/AppIcon.icns` | Logo, and the app icon rendered from it |
 | `install.sh` | Build-from-source installer into `/Applications` |
 | `release/Read Me First.txt` | Install steps shipped inside the disk image |
 | `docs/rectangle-pro-research.md` | Rectangle Pro feature research |
