@@ -17,6 +17,7 @@ enum Action: String, CaseIterable, Codable {
     case stashLeft, stashRight, stashAll, stashAllExceptFront, toggleStashed, cycleStashed, unstashAll
     case togglePin, reflowPin
     case tile2x2, tile2x3, cascadeAll, cascadeApp, appLeftHalf, appRightHalf
+    case undoLayout
 
     enum Category: String, CaseIterable {
         case winArrows = "Win Arrow Keys", halves = "Halves", corners = "Corners", thirds = "Thirds", fourths = "Fourths", sixths = "Sixths"
@@ -63,7 +64,7 @@ enum Action: String, CaseIterable, Codable {
         case .restore, .minimize, .fullScreen, .close, .hideApp, .quitApp, .showMenu, .keyboardGrid, .floatOnTop, .unfloatAll: .window
         case .stashLeft, .stashRight, .stashAll, .stashAllExceptFront, .toggleStashed, .cycleStashed, .unstashAll: .stash
         case .togglePin, .reflowPin: .pin
-        case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf: .multiple
+        case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf, .undoLayout: .multiple
         }
     }
 
@@ -147,7 +148,7 @@ enum Action: String, CaseIterable, Codable {
              .hideApp, .quitApp, .showMenu, .keyboardGrid, .floatOnTop, .unfloatAll, .stashLeft, .stashRight, .stashAll, .stashAllExceptFront,
              .toggleStashed, .cycleStashed, .unstashAll, .togglePin, .reflowPin,
              .winArrowLeft, .winArrowRight, .winArrowUp, .winArrowDown,
-             .fillLeft, .fillRight, .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf:
+             .fillLeft, .fillRight, .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf, .undoLayout:
             return w // these need other windows; AppState handles them
         }
     }

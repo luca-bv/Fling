@@ -164,6 +164,7 @@ enum SmokeTest {
             LayoutEntry(bundleID: bundleID, appName: "Smoke Test", titleMatch: .any, action: .topLeft),
         ])
         state.layouts.append(layout)
+        let beforeLayout = window.frame ?? .null
         await check("apply layout", CGRect(x: s.minX, y: s.minY, width: s.width / 2, height: s.height / 2)) {
             state.apply(layout: layout.id)
         }
@@ -175,6 +176,8 @@ enum SmokeTest {
         expect("save layout records the window's action",
                savedLayout?.entries.contains { $0.bundleID == bundleID && $0.action == .topLeft } == true)
         state.layouts.removeAll { !before.contains($0.id) }
+        // Every other window is put back to the frame it already has, so nothing of the user's moves.
+        await check("undo layout puts the window back", beforeLayout) { state.perform(.undoLayout) }
 
         var target = CustomAction(name: "Smoke Target", frames: [FrameSpec(anchor: .bottomRight, width: "1/4", height: "1/4")])
         target.snapTarget = true

@@ -120,6 +120,10 @@ struct Layout: Codable, Hashable, Identifiable {
     @DefaultFalse var frontmostAppOnly = false
     /// After pairing entries with windows 1:1, keep applying entries to every other window they match.
     @DefaultFalse var allMatches = false
+    /// Moving a window by hand puts every window back where it was before this layout ran.
+    @DefaultFalse var snapBack = false
+    /// This layout's own shortcut undoes it while it's the layout in effect; pressing again applies it afresh.
+    @DefaultFalse var shortcutToggles = false
     var entries: [LayoutEntry] = []
 }
 

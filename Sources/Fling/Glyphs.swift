@@ -71,6 +71,7 @@ enum Glyph {
         case .winArrowRight: "arrow.right.square"
         case .winArrowUp: "arrow.up.square"
         case .winArrowDown: "arrow.down.square"
+        case .undoLayout: "arrow.uturn.backward.square"
         case .fillLeft: "rectangle.lefthalf.inset.filled.arrow.left"
         case .fillRight: "rectangle.righthalf.inset.filled.arrow.right"
         case .larger: "arrow.up.left.and.arrow.down.right"

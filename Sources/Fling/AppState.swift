@@ -24,6 +24,9 @@ final class AppState {
     @ObservationIgnored let stash = Stash()
     // ponytail: keyed by live AX elements and never pruned; prune on window close if they grow.
     @ObservationIgnored private var restoreFrames: [AXUIElement: CGRect] = [:]
+    /// Where every window sat before the last layout ran, so Undo Layout can put them back. One snapshot,
+    /// replaced each time a layout runs and dropped once it's used: a few KB, in memory only.
+    @ObservationIgnored private var layoutUndo: (layout: UUID, frames: [(window: Window, frame: CGRect)], hidden: [pid_t])?
     @ObservationIgnored private var lastPlacement: [AXUIElement: Action] = [:]
     @ObservationIgnored private var last: (key: String, element: AXUIElement, frame: CGRect, count: Int)?
     @ObservationIgnored private var gestures: Gestures?
@@ -150,7 +153,7 @@ final class AppState {
         }
         for layout in layouts {
             guard let shortcut = layout.shortcut else { continue }
-            Hotkeys.register(shortcut) { [weak self] in self?.apply(layout: layout.id) }
+            Hotkeys.register(shortcut) { [weak self] in self?.applyOrUndo(layout: layout.id) }
         }
     }
 
@@ -169,6 +172,7 @@ final class AppState {
         case .togglePin: return togglePin()
         case .reflowPin: return reflowPin()
         case .tile2x2, .tile2x3, .cascadeAll, .cascadeApp, .appLeftHalf, .appRightHalf: return arrange(action)
+        case .undoLayout: return undoLayout()
         default: break
         }
         guard let window = given ?? Window.focused() else {
@@ -468,9 +472,36 @@ final class AppState {
         }
     }
 
+    /// The layout's shortcut: apply it, or put things back when it's already in effect and set to toggle.
+    func applyOrUndo(layout id: UUID) {
+        if layoutUndo?.layout == id, layouts.first(where: { $0.id == id })?.shortcutToggles == true {
+            undoLayout()
+        } else {
+            apply(layout: id)
+        }
+    }
+
+    /// Puts every window back where it was before the last layout ran, and unhides whatever that layout hid.
+    func undoLayout() {
+        guard let undo = layoutUndo else {
+            log(Action.undoLayout.title, problem: "No layout has run since Fling started, so there's nothing to undo")
+            return NSSound.beep()
+        }
+        layoutUndo = nil
+        for (window, frame) in undo.frames where window.frame != nil { // windows closed since then just drop out
+            place(window, at: frame, key: Action.undoLayout.rawValue)
+        }
+        undo.hidden.compactMap { NSRunningApplication(processIdentifier: $0) }.forEach { $0.unhide() }
+    }
+
     func apply(layout id: UUID, launchMissing: Bool = true) {
         let screens = Screen.all()
         guard let layout = layouts.first(where: { $0.id == id }), !screens.isEmpty else { return }
+        // Snapshot before anything moves, on the first pass only: the re-apply after launching apps must not
+        // overwrite it with the half-arranged state. Triggered layouts (wake, display changes) come through here too.
+        if launchMissing {
+            layoutUndo = (id, Window.visible().compactMap { w in w.frame.map { (w, $0) } }, [])
+        }
         var launched = false
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let bundleIDs = Set(layout.entries.map(\.bundleID)).filter { !layout.frontmostAppOnly || $0 == frontmost }
@@ -503,7 +534,9 @@ final class AppState {
         }
 
         if layout.hideOtherApps {
-            for app in regularApps() where !bundleIDs.contains(app.bundleIdentifier ?? "") { app.hide() }
+            for app in regularApps() where !bundleIDs.contains(app.bundleIdentifier ?? "") {
+                if app.hide() { layoutUndo?.hidden.append(app.processIdentifier) }
+            }
         }
         if launched {
             // Newly launched apps need a moment to open their windows.
@@ -522,6 +555,12 @@ final class AppState {
             ?? entry.frame.frame(for: frame, in: usableArea(screens, display, for: window))
         place(window, from: frame, to: destination, key: "layout", count: 0)
         lastPlacement[window.element] = entry.action
+    }
+
+    /// A window was moved or resized by hand: a layout set to snap back puts everything the way it was.
+    func windowMovedByHand() {
+        guard let undo = layoutUndo, layouts.first(where: { $0.id == undo.layout })?.snapBack == true else { return }
+        undoLayout()
     }
 
     /// A new window goes where an "apply when a window opens" layout says, or else back to its remembered spot.

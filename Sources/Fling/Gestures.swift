@@ -348,7 +348,8 @@ final class Gestures {
     }
 
     private func dropped() {
-        if drag?.moving == true || drag?.resizing == true { state.displayMemory?.windowsChanged() }
+        let byHand = drag?.moving == true || drag?.resizing == true
+        if byHand { state.displayMemory?.windowsChanged() }
         if let d = drag, d.resizing, let window = d.window, let new = window.frame,
            UserDefaults.standard.bool(forKey: Prefs.resizeAdjacent) {
             let others = Window.visible().filter { $0.element != window.element }
@@ -366,6 +367,8 @@ final class Gestures {
             }
         }
         drag = nil
+        // After the snap above, so a layout set to snap back wins over the placement this drag just made.
+        if byHand { state.windowMovedByHand() }
         footprint.hide()
         footprintFrame = nil
         snapPanel.hide()

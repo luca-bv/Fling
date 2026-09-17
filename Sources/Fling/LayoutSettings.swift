@@ -48,7 +48,7 @@ struct LayoutSettings: View {
                     Button("New Empty Layout") { state.layouts.append(Layout(name: "Layout \(state.layouts.count + 1)")) }
                 }
             } footer: {
-                Text("Saving records every visible window: its app, title, and either the Fling action that placed it or its exact frame. Run a layout by URL with fling://execute-layout?name=…")
+                Text("Saving records every visible window: its app, title, and either the Fling action that placed it or its exact frame. Run a layout by URL with fling://execute-layout?name=…\n\nRunning a layout first records where every window was, so Undo Layout (in Shortcuts, the menu, or flingctl undo-layout) puts them back.")
                     .foregroundStyle(.secondary)
             }
             ForEach($state.layouts) { $layout in
@@ -67,6 +67,8 @@ struct LayoutSettings: View {
                     Toggle("Bring the layout's windows to the front", isOn: $layout.bringToFront)
                     Toggle("Only arrange the frontmost app", isOn: $layout.frontmostAppOnly)
                     Toggle("Apply entries to every matching window, not just one each", isOn: $layout.allMatches)
+                    Toggle("Snap back if I move a window by hand", isOn: $layout.snapBack)
+                    Toggle("Shortcut undoes this layout while it's in effect", isOn: $layout.shortcutToggles)
                     ForEach($layout.entries) { $entry in
                         LayoutEntryEditor(entry: $entry) { $layout.wrappedValue.entries.removeAll { $0.id == entry.id } }
                     }
