@@ -24,6 +24,8 @@ final class Stash {
     private var entries: [Entry] = []
     private var pendingReveal: Task<Void, Never>?
 
+    var isEmpty: Bool { entries.isEmpty }
+
     /// Stashes a window against `edge`, or the nearer edge when nil.
     func stash(_ window: Window, to edge: Edge? = nil, tabColor: NSColor? = nil) {
         guard let frame = window.frame else { return }

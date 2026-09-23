@@ -17,10 +17,13 @@ final class DisplayMemory {
     init(state: AppState) {
         self.state = state
         memory = Store.load("displayMemoryStore") ?? DisplayMemoryStore()
-        // Catches windows moved by hand or by other apps.
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        // Catches windows moved by other apps (Fling's own moves and drags record right away, via windowsChanged).
+        // Each snapshot asks every app for its windows (~40 ms), which is most of what Fling costs while idle; once
+        // a minute, with slack so macOS can bundle the wakeup with others, halves that.
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.snapshot() }
         }
+        timer?.tolerance = 15
         snapshot()
     }
 

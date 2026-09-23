@@ -7,6 +7,8 @@ import AppKit
 final class Gestures {
     private unowned let state: AppState
     private var tap: CFMachPort?
+    private var moveTap: CFMachPort?
+    private var moveTapEnabled = true
     private let footprint = Overlay(cornerRadius: 10)
     private let reticle = Overlay(cornerRadius: 12)
     private let snapPanel = SnapPanel()
@@ -58,18 +60,9 @@ final class Gestures {
     }
 
     private func start() {
-        let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseDragged, .leftMouseUp, .flagsChanged, .keyDown,
-                                    .otherMouseDown, .otherMouseDragged, .otherMouseUp]
-        let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
-        tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
-            callback: { _, type, event, refcon in
-                let gestures = Unmanaged<Gestures>.fromOpaque(refcon!).takeUnretainedValue()
-                let pass = MainActor.assumeIsolated { gestures.handle(type, event) } // the tap runs on the main run loop
-                return pass ? Unmanaged.passUnretained(event) : nil
-            },
-            userInfo: Unmanaged.passUnretained(self).toOpaque())
-        guard let tap else {
+        tap = makeTap([.leftMouseDown, .leftMouseDragged, .leftMouseUp, .flagsChanged, .keyDown,
+                       .otherMouseDown, .otherMouseDragged, .otherMouseUp])
+        guard tap != nil else {
             // Creating a tap fails until Accessibility access is granted; keep trying.
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(2))
@@ -77,8 +70,43 @@ final class Gestures {
             }
             return
         }
+        // Plain mouse moves get their own tap, on only while something follows the cursor: each event through an
+        // active tap is a round trip to the window server, about 2% of a core while the mouse moves. Checking before
+        // the run loop sleeps catches every way that changes (a hotkey, a click, the command line, a timer).
+        moveTap = makeTap([.mouseMoved])
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.updateMoveTap() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        updateMoveTap()
+    }
+
+    private func makeTap(_ types: [CGEventType]) -> CFMachPort? {
+        let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
+            callback: { _, type, event, refcon in
+                let gestures = Unmanaged<Gestures>.fromOpaque(refcon!).takeUnretainedValue()
+                let pass = MainActor.assumeIsolated { gestures.handle(type, event) } // the tap runs on the main run loop
+                return pass ? Unmanaged.passUnretained(event) : nil
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return nil }
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        return tap
+    }
+
+    private var needsMouseMoves: Bool {
+        throwing != nil || manipulation != nil || !state.stash.isEmpty || state.fillRest?.isShowing == true
+            || state.keyboardGrid?.isShowing == true
+            || UserDefaults.standard.bool(forKey: Prefs.quickThrow) // it reads the cursor's path from before the tap
+    }
+
+    private func updateMoveTap() {
+        guard let moveTap, needsMouseMoves != moveTapEnabled else { return }
+        moveTapEnabled.toggle()
+        CGEvent.tapEnable(tap: moveTap, enable: moveTapEnabled)
+        if !moveTapEnabled { trail.removeAll() }
     }
 
     /// Returns false to swallow the event.
@@ -87,7 +115,9 @@ final class Gestures {
         let p = event.location
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            // Either tap may be the one macOS disabled: re-enable the main one, and let updateMoveTap decide the other.
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            moveTapEnabled = false
         case .flagsChanged:
             let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)).intersection(Prefs.modifierMask)
             flagsChanged(flags, at: p)
