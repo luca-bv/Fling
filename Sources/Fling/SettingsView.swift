@@ -207,7 +207,8 @@ private struct GeneralSettings: View {
             // Permission can be granted while this tab is open; keep the status live.
             while !Task.isCancelled {
                 trusted = AXIsProcessTrusted()
-                canRecordScreen = CGPreflightScreenCaptureAccess()
+                // Off the main thread: this check takes ~11 ms, which stuttered scrolling once a second.
+                canRecordScreen = await Task.detached { CGPreflightScreenCaptureAccess() }.value
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -218,8 +219,10 @@ private struct ShortcutSettings: View {
     @Environment(AppState.self) private var state
     @AppStorage(Prefs.recordModifierSides) private var recordModifierSides = false
 
+    /// A List, not a grouped Form like the other tabs: a Form builds all ~60 rows up front (~350 ms more each time
+    /// the tab opened), while a List builds only the rows on screen.
     var body: some View {
-        Form {
+        List {
             ForEach(Action.Category.allCases, id: \.self) { category in
                 Section(category.rawValue) {
                     ForEach(Action.allCases.filter { $0.category == category }, id: \.self) { action in
@@ -239,7 +242,7 @@ private struct ShortcutSettings: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
+        .listStyle(.inset(alternatesRowBackgrounds: false))
     }
 }
 

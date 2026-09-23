@@ -28,9 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if SettingsHelper.isHelper {
-            NSApp.activate(ignoringOtherApps: true) // an accessory app's window opens behind everything otherwise
-            SettingsHelper.showWindow { [state] in SettingsView().environment(state) }
-            return
+            return SettingsHelper.run { [state] in SettingsView().environment(state) }
         }
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--smoke-test"), i + 1 < args.count else { return }
@@ -38,11 +36,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let passed = await SmokeTest.run(state, bundleID: args[i + 1])
             exit(passed ? 0 : 1)
         }
-    }
-
-    /// The helper is only its window: closing it quits, which is the point of running Settings out of process.
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        SettingsHelper.isHelper
     }
 
     /// Quitting Fling takes its Settings window with it.

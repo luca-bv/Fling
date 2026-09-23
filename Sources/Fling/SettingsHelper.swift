@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// SwiftUI builds a Settings window's views once and keeps them for the life of the process — about 45 MB that is
 /// never given back, even after the window closes. As its own process, Settings hands that memory back to the system
-/// when you close the window, and the part of Fling that runs all day stays small.
+/// a minute after you close the window, and the part of Fling that runs all day stays small.
 ///
 /// The helper runs no engine: no hotkeys, no event tap, no window watching. It edits the same stored configuration
 /// and asks the engine to act through the flingctl socket, the way the command line does.
@@ -15,12 +15,17 @@ enum SettingsHelper {
 
     private static var running: Process?
 
-    /// True while the Settings window is open (this process started it).
+    /// True while the helper this process started is up (its window may be closed; see `run`).
     static var isRunning: Bool { running?.isRunning == true }
+    static var processIdentifier: pid_t? { isRunning ? running?.processIdentifier : nil }
 
-    /// Opens Settings: brings the helper forward if it's already up, otherwise starts one.
+    /// Opens Settings: tells a helper that's still up to show its window, otherwise starts one.
     static func open() {
         if let running, running.isRunning {
+            // Activating another app from the background can be refused, so the helper is told directly.
+            DistributedNotificationCenter.default().postNotificationName(showWindowNotification,
+                                                                         object: String(running.processIdentifier),
+                                                                         deliverImmediately: true)
             NSRunningApplication(processIdentifier: running.processIdentifier)?.activate()
             return
         }
@@ -36,18 +41,48 @@ enum SettingsHelper {
         running = process
     }
 
+    private static let showWindowNotification = NSNotification.Name("com.lucabv.Fling.showSettings")
+    private static var pendingQuit: Task<Void, Never>?
+
+    private static var hasVisibleWindow: Bool { NSApp.windows.contains { $0.isVisible && $0.canBecomeMain } }
+
+    /// In the helper: shows the window now and again whenever the engine asks, and quits a minute after it's closed.
+    /// Staying up that long makes reopening Settings soon after instant (the window is kept, not rebuilt); quitting
+    /// after it hands the memory back.
+    static func run(_ content: @escaping () -> some View) {
+        let show = {
+            NSApp.activate(ignoringOtherApps: true) // an accessory app's window opens behind everything otherwise
+            showWindow(content)
+        }
+        DistributedNotificationCenter.default().addObserver(forName: showWindowNotification, object: String(getpid()),
+                                                            queue: .main) { _ in
+            MainActor.assumeIsolated(show)
+        }
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                pendingQuit?.cancel()
+                pendingQuit = Task {
+                    try? await Task.sleep(for: .seconds(60))
+                    // Checked now, not at the close: it may have been a save panel, or the window was reopened.
+                    if !Task.isCancelled, !hasVisibleWindow { NSApp.terminate(nil) }
+                }
+            }
+        }
+        show()
+    }
+
     private static var fallbackWindow: NSWindow?
 
     /// Opens the Settings window macOS dresses as preferences (toolbar tabs, the right size, a title per tab).
     /// Nothing outside a view can open it, so the app menu's own Settings item is used; if that ever stops
     /// working, a plain window stands in rather than leaving the helper with nothing on screen.
-    static func showWindow(_ content: @escaping () -> some View) {
+    private static func showWindow(_ content: @escaping () -> some View) {
         if let menu = NSApp.mainMenu?.items.first?.submenu,
            let item = menu.items.firstIndex(where: { $0.keyEquivalent == "," }) {
             menu.performActionForItem(at: item)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            guard !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return }
+            guard !hasVisibleWindow else { return }
             let window = NSWindow(contentViewController: NSHostingController(rootView: content()))
             window.title = "Fling Settings"
             window.styleMask = [.titled, .closable, .miniaturizable]

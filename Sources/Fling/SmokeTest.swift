@@ -322,6 +322,15 @@ enum SmokeTest {
         SettingsHelper.open()
         try? await Task.sleep(for: .seconds(3))
         expect("the Settings helper opens", SettingsHelper.isRunning) // by bundle ID it'd match the user's own Fling
+        // Closing the window keeps the helper for a minute, and opening Settings again reuses it.
+        if let pid = SettingsHelper.processIdentifier {
+            Window.all(of: pid).first.map { _ = $0.performControl(.close) }
+            try? await Task.sleep(for: .seconds(1))
+            expect("closing Settings keeps the helper loaded", SettingsHelper.isRunning && Window.all(of: pid).isEmpty)
+            SettingsHelper.open()
+            try? await Task.sleep(for: .seconds(1))
+            expect("Settings reopens in the running helper", SettingsHelper.processIdentifier == pid && !Window.all(of: pid).isEmpty)
+        }
         SettingsHelper.terminate()
 
         window.setFrame(original)
