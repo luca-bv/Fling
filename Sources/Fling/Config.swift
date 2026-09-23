@@ -54,6 +54,7 @@ final class ConfigFileSync {
     let url: URL
     private unowned let state: AppState
     private let enabledKey: String
+    private let pollInterval: TimeInterval
     private var pendingWrite: Task<Void, Never>?
     private var timer: Timer?
 
@@ -69,19 +70,31 @@ final class ConfigFileSync {
         self.state = state
         self.url = url
         self.enabledKey = enabledKey
+        self.pollInterval = pollInterval
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.scheduleWrite() }
+            MainActor.assumeIsolated {
+                self?.updateTimer()
+                self?.scheduleWrite()
+            }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pull() }
-        }
+        updateTimer()
         pull()
     }
 
     /// Call when the setting is switched on: load the file if it's newer, otherwise write this Mac's config.
     func enabledChanged() {
+        updateTimer()
         pull()
         scheduleWrite()
+    }
+
+    /// Polls only while syncing is on, so a Mac that doesn't sync isn't woken every few seconds for nothing.
+    private func updateTimer() {
+        guard enabled != (timer != nil) else { return }
+        timer?.invalidate()
+        timer = enabled ? Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pull() }
+        } : nil
     }
 
     private var modified: Date? {

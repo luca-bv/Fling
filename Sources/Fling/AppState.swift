@@ -141,11 +141,7 @@ final class AppState {
 
     /// In the engine: picks up what the helper wrote and applies the parts that need to run here.
     func reloadConfiguration() {
-        reloading = true
-        shortcuts = ShortcutStorage.merged(saved: Store.load("shortcuts.v2") ?? [:])
-        customActions = Store.load("customActions") ?? []
-        layouts = Store.load("layouts") ?? []
-        reloading = false
+        reloadFromStore()
         cloudSync?.enabledChanged()
         configFile?.enabledChanged()
         if UserDefaults.standard.bool(forKey: Prefs.pinEnabled) { reflowPin() }
@@ -155,7 +151,8 @@ final class AppState {
         UserDefaults.standard.set(showsIcon, forKey: Prefs.showMenuBarIcon)
     }
 
-    /// In the helper: re-reads what the engine changed (it saved a layout, or the config file sync brought something in).
+    /// Re-reads what the other process saved. Only what changed is assigned: each assignment re-registers every
+    /// hotkey in the engine, and most reloads (a toggle, a slider) change none of these.
     func reloadFromStore() {
         reloading = true
         defer { reloading = false }
@@ -180,7 +177,8 @@ final class AppState {
     /// In the helper: the engine's recent placements, for the Diagnostics tab.
     func refreshDiagnostics() async {
         guard let json = await SettingsHelper.reply(to: ["diagnostics", "--json"]),
-              let entries = try? JSONDecoder().decode([DiagnosticEntry].self, from: Data(json.utf8)) else { return }
+              let entries = DiagnosticEntry.decode(json),
+              entries.map(\.id) != diagnostics.map(\.id) else { return } // polled every second; usually nothing new
         diagnostics = entries
     }
 
@@ -753,9 +751,11 @@ final class AppState {
 }
 
 /// Codable so the Settings helper can read the engine's entries over the flingctl socket.
+/// `var` with defaults, not `let`: Codable skips a `let` that has one, so decoded entries got a fresh id and the
+/// time they were read, and the helper's list showed wrong times and rebuilt every row on each refresh.
 struct DiagnosticEntry: Identifiable, Codable {
-    let id = UUID()
-    let date = Date()
+    var id = UUID()
+    var date = Date()
     let command: String
     let app: String
     let window: String
@@ -763,4 +763,11 @@ struct DiagnosticEntry: Identifiable, Codable {
     var actual: CGRect?
     /// nil when the action worked.
     let problem: String?
+
+    /// Reads `flingctl diagnostics --json`, which writes ISO 8601 dates.
+    static func decode(_ json: String) -> [DiagnosticEntry]? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode([DiagnosticEntry].self, from: Data(json.utf8))
+    }
 }

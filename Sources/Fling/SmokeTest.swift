@@ -315,7 +315,7 @@ enum SmokeTest {
         // Settings runs as its own process (see SettingsHelper): check it starts, reaches this engine, and quits.
         state.log("smoke", window: window, problem: nil)
         let (status, output) = await flingctl(["diagnostics", "--json"])
-        let reported = (try? JSONDecoder().decode([DiagnosticEntry].self, from: Data(output.utf8)))?.last?.command
+        let reported = DiagnosticEntry.decode(output)?.last?.command
         expect("the engine serves diagnostics to the Settings helper", status == 0 && reported == "smoke")
         expect("capture-keys pauses the engine's hotkeys", await flingctl(["capture-keys", "on"]).status == 0 && state.capturingKeys)
         _ = await flingctl(["capture-keys", "off"])

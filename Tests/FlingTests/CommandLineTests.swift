@@ -38,3 +38,11 @@ private func error(_ arguments: [String]) -> String? {
     #expect(error(["left-half", "--app"]) != nil)
     #expect(error(["lefthalf"])?.contains("Unknown command") == true)
 }
+
+/// The Settings helper reads the engine's diagnostics as `flingctl diagnostics --json`: ids and times must survive.
+@Test func diagnosticsRoundTrip() throws {
+    let entry = DiagnosticEntry(command: "Left Half", app: "Safari", window: "", problem: nil)
+    let decoded = try #require(DiagnosticEntry.decode(diagnosticsJSON([entry]))?.first)
+    #expect(decoded.id == entry.id)
+    #expect(abs(seconds(from: entry.date, to: decoded.date)) < 1)
+}

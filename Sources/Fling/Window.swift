@@ -45,7 +45,7 @@ struct Window {
     /// Visible standard windows of other apps on the current Space, front to back.
     static func visible() -> [Window] {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        var candidates: [pid_t: [Window]] = [:]
+        var candidates: [pid_t: [(window: Window, frame: CGRect)]] = [:]
         var result: [Window] = []
         let ignored = smokeTesting ? [] : NSRunningApplication.runningApplications(withBundleIdentifier: smokeTestBundleID)
             .map(\.processIdentifier)
@@ -53,11 +53,13 @@ struct Window {
             guard let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != getpid(), !ignored.contains(pid),
                   let dict = entry[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
-            if candidates[pid] == nil { candidates[pid] = all(of: pid) }
+            // Each frame is read once: it's an Accessibility round trip to the app, and re-reading them for every
+            // window-server entry made this quadratic in an app's window count.
+            if candidates[pid] == nil { candidates[pid] = all(of: pid).compactMap { w in w.frame.map { (w, $0) } } }
             // Window server and Accessibility describe the same windows; pair them up by frame. A paired window leaves
             // the pool, so two windows with the same frame (stacked exactly) pair with different entries.
-            if let index = candidates[pid]?.firstIndex(where: { $0.frame?.isClose(to: bounds) == true }) {
-                result.append(candidates[pid]!.remove(at: index))
+            if let index = candidates[pid]?.firstIndex(where: { $0.frame.isClose(to: bounds) }) {
+                result.append(candidates[pid]!.remove(at: index).window)
             }
         }
         return result

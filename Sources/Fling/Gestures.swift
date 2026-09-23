@@ -304,8 +304,6 @@ final class Gestures {
         guard var d = drag, let window = d.window else { return }
         defer { drag = d }
 
-        let screens = Screen.all()
-        let screen = screens.firstIndex { $0.frame.contains(p) }
         guard !d.resizing else { return }
         if !d.moving {
             // Title-bar drags move a window without resizing it; edge drags resize it; text selection does neither.
@@ -320,8 +318,12 @@ final class Gestures {
             state.unsnapped(window)
             d.targets = state.snapTargets(for: window, frame: d.start)
             showTargetOutlines(d.targets.map(\.frame))
-            if usePanel, let screen { snapPanel.show(on: screens[screen]) }
         }
+
+        // Only now, once it's a window move: text selections and resizes drag far more often.
+        let screens = Screen.all()
+        let screen = screens.firstIndex { $0.frame.contains(p) }
+        if usePanel, let screen { snapPanel.show(on: screens[screen]) } // no-op while it's showing
 
         let panelAction = snapPanel.action(at: p)
         let previousPreview = footprintFrame
