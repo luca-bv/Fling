@@ -301,6 +301,29 @@ enum SmokeTest {
         AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         try? await Task.sleep(for: .milliseconds(800))
 
+        // A reload applies what's on disk and must not write it back: Settings saves from another process, and
+        // a write-back of an already-stale read wiped a shortcut that had just been recorded.
+        let storedShortcuts = defaults.data(forKey: "shortcuts.v2")
+        // A shortcut equal to its default is dropped when the engine saves, so it survives only if nothing saves.
+        let untouched = try! JSONEncoder().encode(["leftHalf": Action.leftHalf.defaultShortcut])
+        defaults.set(untouched, forKey: "shortcuts.v2")
+        _ = await flingctl(["reload"])
+        expect("a reload doesn't write the configuration back", defaults.data(forKey: "shortcuts.v2") == untouched)
+        defaults.set(storedShortcuts, forKey: "shortcuts.v2")
+        _ = await flingctl(["reload"])
+
+        // Settings runs as its own process (see SettingsHelper): check it starts, reaches this engine, and quits.
+        state.log("smoke", window: window, problem: nil)
+        let (status, output) = await flingctl(["diagnostics", "--json"])
+        let reported = (try? JSONDecoder().decode([DiagnosticEntry].self, from: Data(output.utf8)))?.last?.command
+        expect("the engine serves diagnostics to the Settings helper", status == 0 && reported == "smoke")
+        expect("capture-keys pauses the engine's hotkeys", await flingctl(["capture-keys", "on"]).status == 0 && state.capturingKeys)
+        _ = await flingctl(["capture-keys", "off"])
+        SettingsHelper.open()
+        try? await Task.sleep(for: .seconds(3))
+        expect("the Settings helper opens", SettingsHelper.isRunning) // by bundle ID it'd match the user's own Fling
+        SettingsHelper.terminate()
+
         window.setFrame(original)
         for (key, value) in zip(touched, saved) {
             if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }

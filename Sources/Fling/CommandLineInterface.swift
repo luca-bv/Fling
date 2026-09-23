@@ -2,7 +2,7 @@ import AppKit
 
 /// A `flingctl` command, parsed from its arguments (pure, so it's unit tested).
 enum CLIRequest: Equatable {
-    enum Listing: String { case actions, layouts, customs, windows, displays }
+    enum Listing: String { case actions, layouts, customs, windows, displays, diagnostics }
 
     case help, version
     case list(Listing, json: Bool)
@@ -11,6 +11,8 @@ enum CLIRequest: Equatable {
     case frame(CGRect, app: String?)
     case layout(String), saveLayout(String?)
     case exportConfig, importConfig(path: String)
+    /// Sent by the Settings helper, which has no engine of its own (see SettingsHelper).
+    case reload, captureKeys(Bool), reflowPin, forgetPositions, clearDiagnostics
 
     static let usage = """
     Usage: flingctl <command> [--app APP] [--json]
@@ -27,6 +29,7 @@ enum CLIRequest: Equatable {
 
     Listings (add --json for JSON):
       flingctl actions | layouts | customs | windows | displays
+      flingctl diagnostics            recent window actions, with the reason any of them fell short
 
     Configuration:
       flingctl config export          print shortcuts, custom positions, layouts and settings as JSON
@@ -72,6 +75,17 @@ enum CLIRequest: Equatable {
             return name.isEmpty ? .failure(CLIError("custom needs a custom position name.")) : .success(.custom(name, app: app))
         case "save-layout":
             return .success(.saveLayout(name.isEmpty ? nil : name))
+        case "reload":
+            return .success(.reload)
+        case "capture-keys":
+            guard name == "on" || name == "off" else { return .failure(CLIError("Use `capture-keys on` or `capture-keys off`.")) }
+            return .success(.captureKeys(name == "on"))
+        case "reflow-pin":
+            return .success(.reflowPin)
+        case "forget-positions":
+            return .success(.forgetPositions)
+        case "clear-diagnostics":
+            return .success(.clearDiagnostics)
         case "frame":
             let values = rest.compactMap(Double.init)
             guard rest.count == 4, values.count == 4, values[2] > 0, values[3] > 0 else {
@@ -149,6 +163,22 @@ extension AppState {
                           relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true))
             guard let data = try? Data(contentsOf: url) else { return (false, "Can't read \(url.path).") }
             return importConfig(data) ? (true, "Imported \(url.path).") : (false, "\(url.path) isn't a Fling configuration.")
+
+        case .reload:
+            reloadConfiguration()
+            return (true, "")
+        case .captureKeys(let capturing):
+            capturingKeys = capturing
+            return (true, "")
+        case .reflowPin:
+            reflowPin()
+            return (true, "")
+        case .forgetPositions:
+            displayMemory?.forgetAll()
+            return (true, "")
+        case .clearDiagnostics:
+            diagnostics.removeAll()
+            return (true, "")
         }
     }
 
@@ -196,6 +226,17 @@ extension AppState {
                         + "\(Int(row["width"] as! CGFloat))×\(Int(row["height"] as! CGFloat))  display \(row["display"]!)"
                 }.joined(separator: "\n")
             }
+        case .diagnostics:
+            if json {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                return (try? encoder.encode(diagnostics)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            }
+            return diagnostics.map { entry in
+                [entry.date.formatted(date: .omitted, time: .standard), entry.command,
+                 entry.window.isEmpty ? entry.app : "\(entry.app) — \(entry.window)", entry.problem ?? "ok"]
+                    .filter { !$0.isEmpty }.joined(separator: "  ")
+            }.joined(separator: "\n")
         case .displays:
             rows = screens.enumerated().map { i, screen in
                 ["display": i + 1, "id": screen.id, "primary": screen.isPrimary,

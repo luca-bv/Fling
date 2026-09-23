@@ -7,11 +7,15 @@ struct FlingApp: App {
     @AppStorage(Prefs.showMenuBarIcon) private var showMenuBarIcon = true
 
     var body: some Scene {
-        MenuBarExtra(isInserted: $showMenuBarIcon) {
+        // `Fling --settings` is only the Settings window (the delegate opens it), in its own process, so closing it
+        // gives the memory back. SceneBuilder takes no conditionals, so the helper drops the menu bar icon instead.
+        MenuBarExtra(isInserted: Binding(get: { showMenuBarIcon && !SettingsHelper.isHelper },
+                                         set: { showMenuBarIcon = $0 })) {
             MenuContent().environment(delegate.state)
         } label: {
             Image(nsImage: Glyph.menuBar).accessibilityLabel("Fling")
         }
+        // Only the helper opens this, and only macOS's own Settings window has the preferences chrome.
         Settings {
             SettingsView().environment(delegate.state)
         }
@@ -23,12 +27,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = AppState()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if SettingsHelper.isHelper {
+            NSApp.activate(ignoringOtherApps: true) // an accessory app's window opens behind everything otherwise
+            SettingsHelper.showWindow { [state] in SettingsView().environment(state) }
+            return
+        }
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--smoke-test"), i + 1 < args.count else { return }
         Task {
             let passed = await SmokeTest.run(state, bundleID: args[i + 1])
             exit(passed ? 0 : 1)
         }
+    }
+
+    /// The helper is only its window: closing it quits, which is the point of running Settings out of process.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        SettingsHelper.isHelper
+    }
+
+    /// Quitting Fling takes its Settings window with it.
+    func applicationWillTerminate(_ notification: Notification) {
+        SettingsHelper.terminate()
     }
 
     /// Opening Fling again while it runs brings back a hidden menu bar icon.
@@ -127,7 +146,6 @@ enum Prefs {
 
 private struct MenuContent: View {
     @Environment(AppState.self) private var state
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         ForEach(Action.Category.allCases, id: \.self) { category in
@@ -158,10 +176,7 @@ private struct MenuContent: View {
             Button("Save Current Layout") { state.saveCurrentLayout() }
         }
         Divider()
-        Button("Settings…") {
-            NSApp.activate(ignoringOtherApps: true) // accessory apps otherwise open Settings behind other windows
-            openSettings()
-        }
+        Button("Settings…") { SettingsHelper.open() }
         .keyboardShortcut(",")
         Button("Quit Fling") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

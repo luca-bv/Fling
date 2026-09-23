@@ -23,6 +23,16 @@ private func error(_ arguments: [String]) -> String? {
     #expect(parse(["frame", "10", "20", "800", "600.5"]) == .frame(CGRect(x: 10, y: 20, width: 800, height: 600.5), app: nil))
     #expect(parse(["config", "import", "~/fling.json"]) == .importConfig(path: "~/fling.json"))
 
+    // What the Settings helper sends the engine, since it runs no engine of its own.
+    #expect(parse(["reload"]) == .reload)
+    #expect(parse(["capture-keys", "on"]) == .captureKeys(true))
+    #expect(parse(["capture-keys", "off"]) == .captureKeys(false))
+    #expect(parse(["reflow-pin"]) == .reflowPin)
+    #expect(parse(["forget-positions"]) == .forgetPositions)
+    #expect(parse(["clear-diagnostics"]) == .clearDiagnostics)
+    #expect(parse(["diagnostics", "--json"]) == .list(.diagnostics, json: true))
+    #expect(error(["capture-keys", "maybe"])?.contains("capture-keys on") == true)
+
     #expect(error(["frame", "10", "20", "800"])?.contains("four numbers") == true)
     #expect(error(["layout"]) != nil)
     #expect(error(["left-half", "--app"]) != nil)

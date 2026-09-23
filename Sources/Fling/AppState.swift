@@ -8,17 +8,37 @@ let smokeTesting = CommandLine.arguments.contains("--smoke-test")
 @MainActor @Observable
 final class AppState {
     var shortcuts: [Action: Shortcut] {
-        didSet { Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts.v2"); registerHotkeys() }
+        didSet {
+            if !reloading { Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts.v2") }
+            registerHotkeys()
+        }
     }
     var customActions: [CustomAction] {
-        didSet { Store.save(customActions, key: "customActions"); registerHotkeys() }
+        didSet {
+            if !reloading { Store.save(customActions, key: "customActions") }
+            registerHotkeys()
+        }
     }
     var layouts: [Layout] {
-        didSet { Store.save(layouts, key: "layouts"); registerHotkeys() }
+        didSet {
+            if !reloading { Store.save(layouts, key: "layouts") }
+            registerHotkeys()
+        }
     }
-    /// Hotkeys pause while keys are being captured (the shortcut recorder or the keyboard grid).
+    /// Set while values loaded from disk are being applied. Saving those again would write what this process
+    /// read back over whatever the other one has written since — recording a shortcut saves twice (it takes the
+    /// keys from their old action first), and a write-back landing between the two lost the new shortcut.
+    @ObservationIgnored private var reloading = false
+    /// Hotkeys pause while keys are being captured (the shortcut recorder). In the Settings helper the hotkeys
+    /// belong to the engine, so it's told to pause instead.
     var capturingKeys = false {
-        didSet { registerHotkeys() }
+        didSet {
+            if SettingsHelper.isHelper {
+                SettingsHelper.send(["capture-keys", capturingKeys ? "on" : "off"])
+            } else {
+                registerHotkeys()
+            }
+        }
     }
 
     @ObservationIgnored let stash = Stash()
@@ -60,6 +80,11 @@ final class AppState {
             Store.save(ShortcutStorage.dictionary(shortcuts), key: "shortcuts.v2")
             UserDefaults.standard.removeObject(forKey: "shortcuts")
         }
+        // The Settings helper edits the same stored configuration, but runs no engine: see SettingsHelper.
+        if SettingsHelper.isHelper {
+            watchSettingsChanges()
+            return
+        }
         registerHotkeys()
         observeTriggers()
         if !smokeTesting {
@@ -94,6 +119,74 @@ final class AppState {
         layouts = config.layouts
         Prefs.restore(config.preferences)
         return true
+    }
+
+    // MARK: The Settings helper and the engine
+
+    /// In the helper: every setting lands in UserDefaults, so one watcher covers them all. The engine can't see
+    /// another process's writes (it gets the new values when it reads them, but no notification), so it's told.
+    private func watchSettingsChanges() {
+        var pending: Task<Void, Never>?
+        observers.append(NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated {
+                    pending?.cancel()
+                    pending = Task {
+                        try? await Task.sleep(for: .milliseconds(300)) // one reload for a burst of edits
+                        if !Task.isCancelled { SettingsHelper.send(["reload"]) }
+                    }
+                }
+            })
+    }
+
+    /// In the engine: picks up what the helper wrote and applies the parts that need to run here.
+    func reloadConfiguration() {
+        reloading = true
+        shortcuts = ShortcutStorage.merged(saved: Store.load("shortcuts.v2") ?? [:])
+        customActions = Store.load("customActions") ?? []
+        layouts = Store.load("layouts") ?? []
+        reloading = false
+        cloudSync?.enabledChanged()
+        configFile?.enabledChanged()
+        if UserDefaults.standard.bool(forKey: Prefs.pinEnabled) { reflowPin() }
+        // @AppStorage ignores another process's writes; writing the same value here is a local change it does see,
+        // so the menu bar icon appears or disappears right away.
+        let showsIcon = UserDefaults.standard.bool(forKey: Prefs.showMenuBarIcon)
+        UserDefaults.standard.set(showsIcon, forKey: Prefs.showMenuBarIcon)
+    }
+
+    /// In the helper: re-reads what the engine changed (it saved a layout, or the config file sync brought something in).
+    func reloadFromStore() {
+        reloading = true
+        defer { reloading = false }
+        let saved: [String: Shortcut] = Store.load("shortcuts.v2") ?? [:]
+        let merged = ShortcutStorage.merged(saved: saved)
+        if merged != shortcuts { shortcuts = merged }
+        let customs: [CustomAction] = Store.load("customActions") ?? []
+        if customs != customActions { customActions = customs }
+        let savedLayouts: [Layout] = Store.load("layouts") ?? []
+        if savedLayouts != layouts { layouts = savedLayouts }
+    }
+
+    /// Drops every remembered window position. The helper asks the engine, which holds them.
+    func forgetRememberedPositions() {
+        if SettingsHelper.isHelper {
+            SettingsHelper.send(["forget-positions"])
+        } else {
+            displayMemory?.forgetAll()
+        }
+    }
+
+    /// In the helper: the engine's recent placements, for the Diagnostics tab.
+    func refreshDiagnostics() async {
+        guard let json = await SettingsHelper.reply(to: ["diagnostics", "--json"]),
+              let entries = try? JSONDecoder().decode([DiagnosticEntry].self, from: Data(json.utf8)) else { return }
+        diagnostics = entries
+    }
+
+    func clearDiagnostics() {
+        diagnostics.removeAll()
+        if SettingsHelper.isHelper { SettingsHelper.send(["clear-diagnostics"]) }
     }
 
     // MARK: Shortcuts & URLs
@@ -141,6 +234,7 @@ final class AppState {
 
     private func registerHotkeys() {
         guard !smokeTesting else { return } // the user's own Fling keeps the shortcuts during a smoke test
+        guard !SettingsHelper.isHelper else { return } // the engine holds the hotkeys; watchSettingsChanges tells it to reload
         Hotkeys.unregisterAll()
         guard !capturingKeys else { return }
         for (action, shortcut) in shortcuts {
@@ -354,7 +448,7 @@ final class AppState {
         displayMemory?.windowsChanged()
     }
 
-    /// Places a window at an exact frame, remembering the old one for Restore (used by the keyboard grid).
+    /// Places a window at an exact frame, remembering the old one for Restore.
     func place(_ window: Window, at target: CGRect, key: String) {
         guard let frame = window.frame else {
             return log(Action(rawValue: key)?.title ?? titleCase(key), window: window, problem: Self.unreadableFrame)
@@ -427,6 +521,7 @@ final class AppState {
 
     /// Puts the pinned app into its strip and slides other windows out of it.
     func reflowPin() {
+        guard !SettingsHelper.isHelper else { return SettingsHelper.send(["reflow-pin"]) }
         guard let screen = Screen.all().first(where: \.isPrimary), let area = pinArea(screen),
               let pinnedID = UserDefaults.standard.string(forKey: Prefs.pinBundleID) else { return }
         for app in regularApps() {
@@ -445,6 +540,14 @@ final class AppState {
 
     /// Saves every visible window as a layout; an existing layout with the same name is replaced (keeping its settings).
     func saveCurrentLayout(name: String? = nil) {
+        // Only the engine can see the windows; it saves the layout, then the helper re-reads it.
+        if SettingsHelper.isHelper {
+            Task {
+                _ = await SettingsHelper.reply(to: ["save-layout"] + (name.map { [$0] } ?? []))
+                reloadFromStore()
+            }
+            return
+        }
         let screens = Screen.all()
         guard !screens.isEmpty else { return }
         var entries: [LayoutEntry] = []
@@ -497,6 +600,7 @@ final class AppState {
     func apply(layout id: UUID, launchMissing: Bool = true) {
         let screens = Screen.all()
         guard let layout = layouts.first(where: { $0.id == id }), !screens.isEmpty else { return }
+        guard !SettingsHelper.isHelper else { return SettingsHelper.send(["layout", layout.name]) }
         // Snapshot before anything moves, on the first pass only: the re-apply after launching apps must not
         // overwrite it with the half-arranged state. Triggered layouts (wake, display changes) come through here too.
         if launchMissing {
@@ -648,7 +752,8 @@ final class AppState {
     }
 }
 
-struct DiagnosticEntry: Identifiable {
+/// Codable so the Settings helper can read the engine's entries over the flingctl socket.
+struct DiagnosticEntry: Identifiable, Codable {
     let id = UUID()
     let date = Date()
     let command: String

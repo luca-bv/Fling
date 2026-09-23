@@ -147,7 +147,7 @@ private struct GeneralSettings: View {
                 Toggle("Remember window positions for each display setup", isOn: $displayMemory)
                 Toggle("Put reopened apps' windows back where they were", isOn: $displayMemoryNewWindows)
                     .disabled(!displayMemory)
-                Button("Forget Remembered Positions") { state.displayMemory?.forgetAll() }
+                Button("Forget Remembered Positions") { state.forgetRememberedPositions() }
             } header: {
                 Text("Display Memory")
             } footer: {
@@ -171,7 +171,7 @@ private struct GeneralSettings: View {
             }
             Section {
                 Toggle("Sync configuration over iCloud Drive", isOn: $iCloudSync)
-                    .onChange(of: iCloudSync) { _, on in if on { state.cloudSync?.enabledChanged() } }
+                    .onChange(of: iCloudSync) { _, on in if on { state.cloudSync?.enabledChanged() } } // the helper's reload does this in the engine
                 Toggle("Keep configuration in ~/.config/fling/config.json", isOn: $configFile)
                     .onChange(of: configFile) { _, on in if on { state.configFile?.enabledChanged() } }
                 HStack {
@@ -487,11 +487,18 @@ private struct DiagnosticsSettings: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(report(), forType: .string)
                 }
-                Button("Clear") { state.diagnostics.removeAll() }
+                Button("Clear") { state.clearDiagnostics() }
                 Spacer()
                 Text("Last 100 actions").foregroundStyle(.secondary)
             }
             .padding(12)
+        }
+        // The engine records these; in the helper they arrive over the socket while the tab is open.
+        .task {
+            while !Task.isCancelled {
+                await state.refreshDiagnostics()
+                try? await Task.sleep(for: .seconds(1))
+            }
         }
     }
 

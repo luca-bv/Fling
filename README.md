@@ -63,7 +63,7 @@ Builds from source and puts Fling in `/Applications`, signed with the local "Fli
 - **Shortcuts**: halves, corners, thirds, fourths, sixths, fill, maximize, center, nudge, size, move, displays, Spaces and window controls
 - **Repeat to cycle**: repeating a half cycles ½ → ⅔ → ⅓; nudge and size repeat while held
 - **Win Arrow Keys**: step between halves and corners like Windows
-- **Keyboard Grid**: press `⌃⌥⌘G`, then two letters (`Q W E R` / `A S D F` / `Z X C V`) to span the window across those grid cells
+- **Keyboard Grid**: moved to its own app, [FlingGrid](https://github.com/luca-bv/FlingGrid)
 - **Left/right-specific shortcuts**: e.g. right ⌘ + arrows, recorded from Settings → Shortcuts
 
 ### Mouse & Trackpad
@@ -141,7 +141,6 @@ Four layers, all built on `⌃⌥` and clear of macOS's own shortcuts. Rectangle
 |---|---|
 | `⌃⌥⌘ ← →` | Previous / Next Display |
 | `⌃⌥⌘ [ ]` | Previous / Next Space |
-| `⌃⌥⌘ G` | Keyboard Grid |
 | `⌃⌥⌘ P` | Float on Top |
 | `⌃⌥⌘ M` | Fling menu at the cursor |
 
@@ -245,7 +244,6 @@ The disk image holds a universal app (Apple Silicon and Intel) signed with the "
 | `Sources/Fling/Gestures.swift` | Event tap: drag snapping, Window Throw, Quick Throw, move/resize, footprint overlay |
 | `Sources/Fling/Trackpad.swift` | Trackpad finger-count trigger (private MultitouchSupport) |
 | `Sources/Fling/SnapPanel.swift` | Snap Panel tiles shown while dragging |
-| `Sources/Fling/KeyboardGrid.swift` | Lettered grid overlay for two-key placement |
 | `Sources/Fling/FillRest.swift` | Fill the Rest: pick-a-window panel for the space left after snapping |
 | `Sources/Fling/Stash.swift` | Edge stashing |
 | `Sources/Fling/FloatingWindows.swift` | Float on Top: live ScreenCaptureKit mirrors in floating panels |
@@ -255,6 +253,7 @@ The disk image holds a universal app (Apple Silicon and Intel) signed with the "
 | `Sources/Fling/Config.swift` | Export/import, iCloud Drive sync and the dotfile config |
 | `Sources/Fling/SettingsView.swift` | Settings: General, Shortcuts (recorder), Mouse, Diagnostics |
 | `Sources/Fling/LayoutSettings.swift` | Settings: Custom positions and Layouts |
+| `Sources/Fling/SettingsHelper.swift` | Settings runs as its own process (`Fling --settings`), so closing it frees its memory |
 | `Sources/Fling/CommandServer.swift`, `CommandLineInterface.swift` | flingctl's socket server and commands |
 | `Sources/flingctl/main.swift` | The `flingctl` client |
 | `Sources/Fling/SmokeTest.swift`, `Tests/Smoke/` | `make smoke` live test and its test window |
