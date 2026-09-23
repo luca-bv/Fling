@@ -36,8 +36,15 @@ enum SmokeTest {
     }
 
     static func run(_ state: AppState, bundleID: String) async -> Bool {
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
-              let window = Window.all(of: app.processIdentifier).first, let original = window.frame,
+        // A just-opened app can take a few seconds to answer Accessibility (longer on a busy Mac); wait up to 15 s.
+        var found: (app: NSRunningApplication, window: Window)?
+        _ = await waitUntil(seconds: 15) {
+            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
+                  let window = Window.all(of: app.processIdentifier).first, window.frame != nil else { return false }
+            found = (app, window)
+            return true
+        }
+        guard let (app, window) = found, let original = window.frame,
               let screen = Screen.all().first(where: { $0.visible.intersects(original) })
         else {
             print("FAIL no usable window for \(bundleID) (is Fling allowed in Accessibility settings?)")
